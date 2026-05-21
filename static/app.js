@@ -123,294 +123,266 @@ const PROMPT_LANG_FOOTER = `
 - Tables, bullet lists, sample messages, and verbal scripts — all in Korean.
 - If a section is missing input from [Our Dealer Field Profile], mark it as [수정 필요] in Korean instead of leaving it in English.`;
 
+const COMMON_FIELDS = [
+    { id: 'dealer',    label: '대리점명',     placeholder: '예: ○○보일러 강동대리점' },
+    { id: 'region',    label: '담당 지역',     placeholder: '예: 서울 강동구 고덕동·명일동' },
+    { id: 'customers', label: '핵심 고객층',   placeholder: '예: 15년 이상 구축 아파트 거주자, 고령자 가정' },
+];
+
+const COMMON_SAMPLE = {
+    dealer: '○○보일러 강동대리점',
+    region: '서울 강동구 고덕동, 명일동, 암사동',
+    customers: '15년 이상 구축 아파트 거주자, 고령자 가정, 맞벌이 부부',
+};
+
+function _wrap(role, contextLabel, specificLines, body){
+    return PROMPT_LANG_HEADER + 'You are ' + role + '.\n\n' +
+        '[Our Dealer Context]\n' +
+        '- Dealer (대리점명): {dealer}\n' +
+        '- Service area (담당 지역): {region}\n' +
+        '- Primary customer segment (주요 고객층): {customers}\n\n' +
+        '[Specific Inputs for ' + contextLabel + ']\n' +
+        specificLines + '\n\n' +
+        body + PROMPT_LANG_FOOTER;
+}
+
 const PROMPTS = [
     {
-        id: "common",
-        title: "공통 현장정보 입력 블록",
-        tag: "기본 입력값",
-        summary: "모든 산출물 앞에 붙이는 대리점 현장정보 템플릿입니다. (영문 지시 → 한국어 출력)",
-        prompt: PROMPT_LANG_HEADER + `You are preparing the standardized [Our Dealer Field Profile] block that every downstream deliverable in this workflow will reference. This block captures who the dealer is, what their region looks like, and what problems they face.
-
-[FIELD PROFILE BLOCK]
-
-[Instructions for this step]
-- Do not produce any sales deliverable yet. Confirm that the profile above is captured and ready to attach to subsequent prompts.
-- If any field is empty or still shows [input], list those fields back to the owner so they fill them in first.
-- Briefly reflect to the owner (in Korean, 3~5 lines) which characteristics of this profile will most likely steer the downstream outputs (e.g., 구축 아파트 비중, 고령자 가정, 토요일 방문 가능 여부 등).` + PROMPT_LANG_FOOTER
-    },
-    {
-        id: "db",
-        title: "고객 DB 분류표 생성",
-        tag: "CRM / 리드등급",
-        summary: "기존 고객 DB를 A/B/C 우선순위로 나누고, 무상점검·견적·예약 액션을 정리합니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a CRM consultant designing the off-season sales strategy for a Korean boiler dealer. Build a customized customer DB classification table using the dealer field profile below.
-
-[FIELD PROFILE BLOCK]
-
-[Objective]
-During the summer off-season, classify the existing customer database to identify:
-1) free inspection (무상점검) candidates,
-2) high replacement-probability customers,
-3) review collection candidates,
-4) peak-season reservation (성수기 예약) candidates.
+        id: 'db',
+        title: '고객 DB 분류표',
+        tag: 'CRM · 리드등급',
+        summary: '기존 고객 DB를 A/B/C 우선순위로 나누고 무상점검·견적·예약 액션을 정리합니다.',
+        fields: [
+            { id: 'dbSize', label: 'DB 규모', placeholder: '예: 약 1,200명' },
+            { id: 'asKeywords', label: '최근 6개월 AS 키워드', placeholder: '온수 지연, 누수, 소음', type: 'textarea' },
+            { id: 'segmentBreakdown', label: '세그먼트 비율', placeholder: '구축 아파트 60%, 빌라 30%, 상가 10%', type: 'textarea' },
+        ],
+        sample: { dbSize: '약 1,200명', asKeywords: '온수 지연\n난방 편차\n보일러 소음', segmentBreakdown: '구축 아파트 60%\n빌라 30%\n상가 10%' },
+        outputSections: ['7개 컬럼 고객 분류표', 'A/B/C 우선순위 등급', '추천 멘트', '이번 주 DB 추출 5단계'],
+        prompt: _wrap(
+            'a CRM consultant designing the off-season sales strategy for a Korean boiler dealer',
+            'Customer DB Classification',
+            '- Database size: {dbSize}\n- Top 6-month AS keywords: {asKeywords}\n- Customer segment breakdown: {segmentBreakdown}',
+            `[Objective]
+During the summer off-season, classify the existing customer database into:
+1) free inspection (무상점검) candidates, 2) high replacement-probability customers,
+3) review collection candidates, 4) peak-season reservation (성수기 예약) candidates.
 
 [Required Content]
-- Years since installation (설치 경과연수).
-- Recent AS history.
-- Discomfort keywords: hot water delay, heating imbalance, noise, smell, leaks (온수 지연, 난방 편차, 소음, 냄새, 누수).
+- Years since installation, recent AS history, discomfort keywords (온수, 난방, 소음, 누수).
 - Safety-sensitive households (고령자, 영유아, 환자 가정).
-- Regional characteristics specific to this dealer's area (구축 아파트, 빌라, 상가).
-- Customers eligible for review requests.
-- Quote inquiries that did not convert.
-- Peak-season reservation candidates.
+- Regional housing characteristics (구축 아파트, 빌라, 상가).
+- Customers eligible for review requests and unconverted quote inquiries.
 
 [Output Format]
-Produce a Korean-language table with exactly these columns:
+Korean-language table:
 | 타깃 고객군 | CRM 필터 조건 | 확인해야 할 핵심 컬럼 | 고객에게 할 액션 | 우선순위 등급 | 현장 맞춤 설명 | 추천 멘트 |
 
 [Writing Guidelines]
-- Tier customers into A / B / C priority.
-- Reflect the specific region, customer segment, and field issues from the profile in every row.
-- The owner must be able to copy this directly into a CRM or spreadsheet.
-- Include short verbal scripts (in Korean) staff can read to customers.
-- End the deliverable with a section titled "이번 주 바로 실행할 DB 추출 순서 5단계" listing 5 concrete steps.` + PROMPT_LANG_FOOTER
+- Tier customers A/B/C. Reflect this dealer's region, segments, and field issues in every row.
+- The table must be copy-paste ready into CRM or Excel.
+- End with section "이번 주 바로 실행할 DB 추출 순서 5단계".`
+        )
     },
     {
-        id: "call",
-        title: "알림톡·해피콜 스크립트 생성",
-        tag: "문자 / 전화 대본",
-        summary: "무상 안심점검 안내, 해피콜 1차 대본, 거절 대응 문구를 만듭니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a sales copywriter producing customer outreach scripts for a Korean boiler dealer. Build alimtalk (알림톡), happy-call (해피콜), and objection-handling scripts tailored to the dealer profile below.
-
-[FIELD PROFILE BLOCK]
-
-[Objective]
-Before the winter peak season, contact existing customers about a free safety inspection (무상 안심점검) and convert those contacts into visit reservations, quote consultations, and pre-season reservations.
+        id: 'call',
+        title: '알림톡·해피콜 스크립트',
+        tag: '문자 · 전화 대본',
+        summary: '무상 안심점검 안내, 해피콜 1차 대본, 거절 대응 문구를 만듭니다.',
+        fields: [
+            { id: 'toneStyle', label: '말투 톤', placeholder: '친근 / 공식 / 캐주얼' },
+            { id: 'preferredChannels', label: '선호 채널', placeholder: '알림톡, 문자, 전화 (가능한 채널)' },
+            { id: 'recentResponse', label: '최근 응답률', placeholder: '예: 알림톡 18%, 전화 24%' },
+        ],
+        sample: { toneStyle: '친근하면서도 신뢰감 있는 톤', preferredChannels: '알림톡 우선, 미응답 시 전화', recentResponse: '알림톡 응답률 12%, 통화 연결율 30%' },
+        outputSections: ['알림톡 3종 (기본형/구축아파트/온수불만)', '해피콜 1차 대본 (6단계)', '거절 대응 표 7가지', '후속 문자 4종', '체크리스트'],
+        prompt: _wrap(
+            'a sales copywriter producing customer outreach scripts for a Korean boiler dealer',
+            'Alimtalk / Happy-call Scripts',
+            '- Preferred tone: {toneStyle}\n- Preferred channels: {preferredChannels}\n- Recent response rates: {recentResponse}',
+            `[Objective]
+Before the winter peak, contact existing customers for a free safety inspection (무상 안심점검) and convert into visit reservations, quote consultations, and pre-season reservations.
 
 [Required Deliverables]
-1. Three alimtalk (알림톡) message variants:
-   - Standard version
-   - Aging-apartment (구축 아파트) resident version
-   - Hot-water-complaint customer version
-2. A first-call happy-call script with these stages:
-   - Opening
-   - Reference to past service history
-   - Discomfort confirmation questions
-   - Free inspection offer
-   - Schedule proposal
-   - Closing remarks
-3. Objection-handling scripts for each of these customer responses:
-   - "멀쩡해요." (It's fine.)
-   - "돈 드나요?" (Does it cost?)
-   - "바빠요." (I'm busy.)
-   - "다음에요." (Next time.)
-   - "가격만 알려주세요." (Just tell me the price.)
-   - "가족이랑 상의할게요." (I'll discuss with family.)
-   - "다른 데도 알아보고 있어요." (I'm checking other dealers.)
-4. Follow-up text messages for:
-   - Customers who missed the call
-   - Customers without a confirmed schedule
-   - Post-inspection customers who have not decided on a quote
-   - Peak-season reservation nudges
+1. Three alimtalk (알림톡) variants: 기본형 / 구축 아파트 거주자형 / 온수 불만 고객형
+2. Happy-call (해피콜) 1차 대본: 오프닝 / 과거 이용 이력 / 불편 확인 / 무상점검 안내 / 일정 제안 / 마무리
+3. Objection scripts for: "멀쩡해요." "돈 드나요?" "바빠요." "다음에요." "가격만 알려주세요." "가족이랑 상의할게요." "다른 데도 알아보고 있어요."
+4. Follow-up texts for: 부재 / 일정 미확정 / 견적 미결정 / 성수기 예약 유도
 
 [Writing Guidelines]
-- Avoid sales-heavy tone. Add trust phrases: 강매 없음, 출장비 0원, 점검 결과만 안내 — but mark with [수정 필요] if these do not match the dealer's real policy.
-- Embed the dealer's specific region, complex names, and customer pain points naturally.
-- Keep alimtalk messages under 500 Korean characters each.
-- Happy-call scripts must be in spoken Korean (구어체) so a staff member can read them aloud.
+- Avoid pushy tone. Add trust phrases: 강매 없음 / 출장비 0원 / 점검 결과만 안내 — mark [수정 필요] if dealer policy differs.
+- Alimtalk under 500 Korean characters each.
+- Happy-call must be spoken Korean (구어체) so staff can read aloud.
 
 [Output Format]
-1. 알림톡 3종
-2. 해피콜 1차 대본 (단계별 표)
-3. 거절 대응 표
-4. 후속 문자 4종
-5. 사장님이 수정해야 할 항목 체크리스트` + PROMPT_LANG_FOOTER
+1. 알림톡 3종  2. 해피콜 1차 대본 표  3. 거절 대응 표  4. 후속 문자 4종  5. 수정해야 할 항목 체크리스트`
+        )
     },
     {
-        id: "cs",
-        title: "클린 CS 체크리스트 생성",
-        tag: "현장 품질관리",
-        summary: "기사 방문 품질을 표준화하고, 점검 방문을 리뷰·예약으로 연결합니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a field-service quality manager building the on-site CS (Customer Service) playbook for a Korean boiler dealer. Build a clean-CS (클린 CS) checklist using the dealer profile below.
-
-[FIELD PROFILE BLOCK]
-
-[Objective]
-Standardize technician visit quality to reduce customer complaints, and convert free inspection visits into reviews, repeat visits, and peak-season reservations.
+        id: 'cs',
+        title: '클린 CS 매뉴얼',
+        tag: '현장 품질관리',
+        summary: '기사 방문 8단계 품질을 표준화하고 점검 방문을 리뷰·예약으로 연결합니다.',
+        fields: [
+            { id: 'staffCount', label: '기사 인원', placeholder: '예: 3명' },
+            { id: 'equipmentList', label: '보유 장비', placeholder: '공기질 측정기, 수질키트, 보양매트 등', type: 'textarea' },
+            { id: 'avgVisitTime', label: '평균 방문 시간', placeholder: '예: 1시간 20분' },
+        ],
+        sample: { staffCount: '3명', equipmentList: '공기질 측정기 있음\n수질 간이키트 있음\n보양매트·덧신·QR 리뷰카드 있음', avgVisitTime: '1시간 30분' },
+        outputSections: ['8단계 체크리스트 표', '대체 행동 (장비 없을 시)', '5분 브리핑 멘트'],
+        prompt: _wrap(
+            'a field-service quality manager building the clean-CS playbook for a Korean boiler dealer',
+            'Clean-CS Checklist',
+            '- Technician count: {staffCount}\n- Equipment available: {equipmentList}\n- Average visit duration: {avgVisitTime}',
+            `[Objective]
+Standardize technician visit quality to reduce complaints, and convert free-inspection visits into reviews, repeat visits, and peak-season reservations.
 
 [Required Sections]
-Cover all 8 stages of a technician visit:
-1. Before departure (출발 전)
-2. Before calling the customer (고객 연락 전)
-3. Just before arrival (방문 직전)
-4. Entering the home (자택 진입)
-5. During inspection (점검 중)
-6. Result explanation (결과 설명)
-7. Before leaving (퇴실 전)
-8. After-visit recording (방문 후 기록)
+1. 출발 전  2. 고객 연락 전  3. 방문 직전  4. 자택 진입  5. 점검 중
+6. 결과 설명  7. 퇴실 전  8. 방문 후 기록
 
 [Required Items]
-- Uniform / nameplate / employee ID
-- Shoe covers, protective mats, trash bags, microfiber cloths
-- Air quality meter or water test kit availability
-- 10~20 minute pre-arrival call
-- Re-explanation of visit purpose
-- Photo consent before taking photos
-- Discomfort keyword capture
-- 3-tier result explanation: 정상 / 주의 / 조치필요
-- Site cleanup
-- Honest review request — only to satisfied customers
-- CRM / reservation log entry
+유니폼·명찰·사원증, 덧신·보양매트·쓰레기봉투·극세사천, 공기질 측정기/수질키트 보유 여부, 10~20분 전 연락, 방문 목적 재안내, 사진 동의, 불편 키워드 확인, 정상/주의/조치필요 3단계 설명, 현장 정리, 솔직 리뷰 요청, CRM 기록.
 
 [Output Format]
-Produce a Korean-language table:
+Korean table:
 | 구간 | O/X 체크항목 | 담당자 | 고객에게 보이는 행동 | 주의할 말 | 완료 후 기록 |
 
 [Writing Guidelines]
-- For equipment the dealer does NOT own (per the profile), suggest a "대체 행동" (substitute action). Example: 공기질 측정기 없음 → 환기 상태 / 곰팡이 / 습도 체감 확인으로 대체.
-- Reflect CS pain points specific to this dealer's customer segments (고령자, 맞벌이, 임대인, etc.).
-- Use short, action-oriented Korean sentences a technician can scan on-site.
-- End with a 5-minute "기사 교육용 5분 브리핑 멘트" the owner can read aloud at morning huddle.` + PROMPT_LANG_FOOTER
+- For equipment the dealer does NOT own, provide a "대체 행동" (substitute action).
+- Reflect this dealer's customer segments (고령자, 맞벌이, 임대인 등).
+- End with "기사 교육용 5분 브리핑 멘트".`
+        )
     },
     {
-        id: "bs",
-        title: "하절기 안심점검표 생성",
-        tag: "무상점검 / 증거화",
-        summary: "보일러·환기·수질 점검을 고객에게 보여줄 수 있는 증거 중심으로 정리합니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a technical sales specialist designing the summer free-inspection program (하절기 무상점검) for a Korean boiler dealer. Build a summer B/S 안심점검표 using the dealer profile below.
-
-[FIELD PROFILE BLOCK]
-
-[Objective]
-On every summer inspection visit, leave the customer with visible evidence of the inspection, and convert routine inspection into pre-winter preventive maintenance, replacement consideration, and peak-season reservation.
+        id: 'bs',
+        title: '하절기 B/S 안심점검표',
+        tag: '무상점검 · 증거화',
+        summary: '여름 무상점검 시 보여줄 증거 중심의 10구역 점검표.',
+        fields: [
+            { id: 'inspectionHours', label: '점검 가능 시간대', placeholder: '예: 평일 10-18시, 토 10-14시' },
+            { id: 'inspectionTools', label: '점검 장비', placeholder: '공기질 측정기, 수질키트 등', type: 'textarea' },
+            { id: 'avgInspectTime', label: '평균 점검 시간', placeholder: '예: 40분' },
+        ],
+        sample: { inspectionHours: '평일 09:30-18:00, 토 10:00-14:00', inspectionTools: '공기질 측정기\n수질 간이키트\n온도계·습도계', avgInspectTime: '40분' },
+        outputSections: ['10구역 점검표', '판정 기준 4단계', '3분 결과 안내 멘트', '결과별 후속 액션'],
+        prompt: _wrap(
+            'a technical-sales specialist designing the summer free-inspection program (하절기 무상점검) for a Korean boiler dealer',
+            'Summer B/S Inspection Checklist',
+            '- Inspection hours: {inspectionHours}\n- Tools on hand: {inspectionTools}\n- Average inspection time: {avgInspectTime}',
+            `[Objective]
+Leave visible evidence at every summer inspection visit, converting routine inspection into pre-winter preventive maintenance, replacement consideration, and peak-season reservation.
 
 [Required Inspection Zones]
-1. 보일러 본체 (boiler body)
-2. 배기통·연통 (flue / exhaust)
-3. 온수 (hot water)
-4. 난방 (heating)
-5. 누수·부식 (leaks / corrosion)
-6. 소음·진동 (noise / vibration)
-7. 환기 (ventilation)
-8. 공기질 (air quality)
-9. 수질 (water quality)
-10. 고객 생활 불편사항 (lifestyle discomfort items)
+1. 보일러 본체  2. 배기통·연통  3. 온수  4. 난방  5. 누수·부식
+6. 소음·진동  7. 환기  8. 공기질  9. 수질  10. 고객 생활 불편사항
 
 [Output Format]
-Produce a Korean-language table:
+Korean table:
 | 구역 | 점검항목 | 점검 방법 | 고객에게 보여줄 증거 | 판정 기준 | 판정 결과 | 다음 액션 |
 
 [Decision Tiers]
 정상 / 주의 / 조치필요 / 교체검토
 
 [Writing Guidelines]
-- Include replacement-likelihood criteria by installation age (e.g., 4~6년: 예방관리, 7년 이상: 교체검토).
-- Reflect dealer-area-specific issues from the profile (누수, 배기통, 온수 지연, 소음, 녹물, 냄새 등).
-- Use a "예방점검" framing instead of scare tactics.
-- If the dealer lacks air-quality meter or water-test kit, provide alternative inspection methods.
-- After the table, add a "3분 결과 안내 멘트" (3-minute result-explanation script for technicians to read).
-- After that, add follow-up actions per result tier. Example:
-  정상 → 리뷰 요청 / 주의 → 9월 전 재점검 / 조치필요 → 견적 안내 / 교체검토 → 성수기 예약 제안` + PROMPT_LANG_FOOTER
+- Include replacement-likelihood by installation age (4~6년 예방관리, 7년 이상 교체검토).
+- Use "예방점검" framing, never scare tactics.
+- If specific tools are missing, provide alternative inspection methods.
+- Add "3분 결과 안내 멘트" after the table.
+- Add per-tier follow-up actions: 정상 → 리뷰 요청 / 주의 → 9월 전 재점검 / 조치필요 → 견적 안내 / 교체검토 → 성수기 예약 제안.`
+        )
     },
     {
-        id: "upsell",
-        title: "업세일링 3대 패키지 생성",
-        tag: "패키지 / 객단가",
-        summary: "가격 비교가 아니라 고객 문제 해결형 패키지로 상담 구조를 바꿉니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a sales strategist designing upsell packages and consultative scripts for a Korean boiler dealer. Build 3~5 customized upsell packages using the dealer profile below.
+        id: 'upsell',
+        title: '업세일링 3대 패키지',
+        tag: '패키지 · 객단가',
+        summary: '가격 비교 회피용 문제 해결형 패키지 3~5종을 설계합니다.',
+        fields: [
+            { id: 'targetAvgRevenue', label: '객단가 목표', placeholder: '예: 평균 150만원' },
+            { id: 'priceRange', label: '가격대 범위', placeholder: '예: 80~250만원' },
+            { id: 'mainProducts', label: '주력 제품', placeholder: '제조사 및 모델군', type: 'textarea' },
+        ],
+        sample: { targetAvgRevenue: '평균 180만원', priceRange: '90~280만원', mainProducts: '경동나비엔 NCB 시리즈\n귀뚜라미 듀얼파워' },
+        outputSections: ['패키지 5종 비교표', '제안 멘트', '가격 설명 방식', '거절 대응', '진단 질문 7개'],
+        prompt: _wrap(
+            'a sales strategist designing upsell packages for a Korean boiler dealer',
+            'Upsell Packages',
+            '- Target per-customer revenue (객단가): {targetAvgRevenue}\n- Price range: {priceRange}\n- Main product lineup: {mainProducts}',
+            `[Objective]
+Stop customers from comparing on price alone. Convert each consultation into a problem-solving package that raises 객단가 and reservation conversion.
 
-[FIELD PROFILE BLOCK]
+[Required Base Packages]
+1. 안심 케어 세트 — Target: 7+ year users, repeat-AS customers, 고령자 가정
+2. 스마트 라이프 세트 — Target: 맞벌이, 외출 잦은 가정, 임대인
+3. 온수 특화 세트 — Target: 온수 지연, 수압 불만, 녹물·염소 냄새 고객
 
-[Objective]
-Stop customers from comparing on price alone. Convert each consultation into a problem-solving package recommendation that raises 객단가 (per-customer revenue) and reservation conversion.
-
-[Base Package Direction — required]
-1. 안심 케어 세트
-   - Target: 7+ year users, repeat-AS customers, elderly households
-2. 스마트 라이프 세트
-   - Target: dual-income households, frequently-out homes, landlords
-3. 온수 특화 세트
-   - Target: hot-water-delay complaints, low pressure, rust/chlorine smell
-
-Add 1~2 additional packages tailored to the profile (e.g., 구축 아파트 집중 세트, 임대인 관리 세트, 상가 영업중단 최소화 세트, 고령자 안전 세트).
+Add 1~2 more packages tailored to this dealer (구축 아파트 집중, 임대인 관리, 상가 영업중단 최소화, 고령자 안전 등).
 
 [Output Format]
-Produce a Korean-language table:
+Korean table:
 | 패키지명 | 구성 | 타깃 고객 | 고객 불편 포인트 | 제안 멘트 | 가격 설명 방식 | 후속 액션 |
 
 [Writing Guidelines]
-- Leave product names and prices as [제품명 입력], [가격 입력] for the owner to fill in later.
-- Frame each package as "problem solving," not "cheap product."
-- Embed regional field stories and real customer reactions from the profile.
-- For each package, add an objection-handling script for when the customer declines.
-- At the end, add "상담 시 패키지 선택 질문 7개" — seven diagnostic questions staff can ask the customer to choose the right package.` + PROMPT_LANG_FOOTER
+- Leave product names/prices as [제품명 입력], [가격 입력] placeholders.
+- Frame each package as "problem solving," not "cheap product".
+- Add per-package objection-handling script.
+- End with "상담 시 패키지 선택 질문 7개".`
+        )
     },
     {
-        id: "marketing",
-        title: "SNS/리뷰 캘린더 생성",
-        tag: "4주 실행계획",
-        summary: "지역 채널, 네이버 플레이스, 지역카페, 리뷰 요청을 4주 액션으로 정리합니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a local marketing manager designing the 4-week off-season acquisition plan for a Korean boiler dealer. Build a 4-week regional marketing / SNS / review calendar using the dealer profile below.
-
-[FIELD PROFILE BLOCK]
-
-[Objective]
-From May to August (off-season), grow free-inspection visits and simultaneously build Naver Place reviews, local-cafe responses (지역카페), apartment-complex bulletin board reach, and peak-season reservations.
+        id: 'marketing',
+        title: 'SNS · 리뷰 4주 캘린더',
+        tag: '4주 실행계획',
+        summary: '네이버 플레이스, 지역카페, 단지 게시판, 리뷰 요청을 4주 액션으로 정리.',
+        fields: [
+            { id: 'channels', label: '운영 채널', placeholder: '네이버 플레이스, 지역카페, 인스타, 유튜브 등', type: 'textarea' },
+            { id: 'contentTone', label: '콘텐츠 톤', placeholder: '예: 친근/정보형/전문가형' },
+            { id: 'currentReviews', label: '현재 리뷰 수', placeholder: '예: 네이버 73건, 평점 4.7' },
+        ],
+        sample: { channels: '네이버 플레이스\n맘카페(고덕맘)\n인스타 @○○보일러강동', contentTone: '친근하면서 전문가 같은 톤', currentReviews: '네이버 73건/평점 4.7, 카카오 28건' },
+        outputSections: ['4주 마케팅 캘린더', '네이버 플레이스 공지문 1개', '지역카페 글 1개', '아파트 게시판 안내문 1개', '월말 점검표'],
+        prompt: _wrap(
+            'a local marketing manager for a Korean boiler dealer',
+            '4-Week SNS/Review Calendar',
+            '- Active channels: {channels}\n- Content tone: {contentTone}\n- Current review counts: {currentReviews}',
+            `[Objective]
+During the May~August off-season, grow free-inspection visits while simultaneously building Naver Place reviews, local-cafe responses, complex bulletin reach, and peak-season reservations.
 
 [Required Channels]
-1. 기존 고객 알림톡
-2. 네이버 플레이스 공지
-3. 지역카페 생활정보 글
-4. 아파트 단지 게시판 / 엘리베이터 게시 협의
-5. 방문 고객 QR 리뷰카드
-6. 점검 후 리마인드 문자
-7. 성수기 예약대장 정리
+기존 고객 알림톡 / 네이버 플레이스 공지 / 지역카페 생활정보 글 / 아파트 단지 게시판 / 방문 QR 리뷰카드 / 점검 후 리마인드 문자 / 성수기 예약대장 정리.
 
 [Output Format]
-Produce a Korean-language table covering Week 1 to Week 4:
+Korean table covering Week 1~4:
 | 주차 | 핵심 목표 | 실행 액션 | 사용할 문구/콘텐츠 | 담당자 | KPI | 주의사항 |
 
 [Writing Guidelines]
-- Reflect the dealer's region name, complex names, housing type, and customer segment in every row.
-- Include 1 example Naver Place announcement (네이버 플레이스 공지문) in Korean.
-- Include 1 example 지역카페 lifestyle-info post (지역카페 생활정보 글) in Korean.
-- Include 1 short bulletin-board notice (아파트 게시판용 안내문) in Korean.
-- Review requests must never look like coerced-positive reviews. Frame them as "솔직한 후기" requests to satisfied customers only.
-- End the deliverable with "이번 달 마케팅 점검표" (this month's marketing audit checklist).` + PROMPT_LANG_FOOTER
+- Reflect this dealer's region, complex names, housing type, and customer segment.
+- Include 1 example Naver Place 공지문, 1 example 지역카페 생활정보 글, 1 example 아파트 게시판 안내문 — all in Korean.
+- Review requests must never look like coerced-positive reviews. Frame as "솔직한 후기" requests to satisfied customers.
+- End with "이번 달 마케팅 점검표".`
+        )
     },
     {
-        id: "reservation",
-        title: "성수기 예약 대장 생성",
-        tag: "예약관리 / 재콜",
-        summary: "비수기 점검·견적·보류 고객을 9~12월 성수기 예약으로 전환하는 대장을 만듭니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a sales-operations consultant designing the peak-season reservation management system for a Korean boiler dealer. Build a peak-season reservation log (성수기 예약 대장) using the dealer profile below.
+        id: 'reservation',
+        title: '성수기 예약 대장',
+        tag: '예약관리 · 재콜',
+        summary: '비수기 점검·견적·보류 고객을 9~12월 성수기 예약으로 전환하는 대장.',
+        fields: [
+            { id: 'managementTool', label: '사용 도구', placeholder: '엑셀 / 구글시트 / CRM' },
+            { id: 'avgLeadTime', label: '예약 평균 리드타임', placeholder: '예: 8주' },
+            { id: 'peakMonths', label: '성수기 월', placeholder: '예: 10-12월' },
+        ],
+        sample: { managementTool: '구글시트 + 카카오톡 알림', avgLeadTime: '6~10주', peakMonths: '10~12월 (특히 11월)' },
+        outputSections: ['20개 컬럼 대장 양식', 'A/B/C 리드등급 기준', '보류사유별 재콜 멘트', '5월~9월 운영 프로세스'],
+        prompt: _wrap(
+            'a sales-operations consultant designing the peak-season reservation management system',
+            'Peak-Season Reservation Log (성수기 예약 대장)',
+            '- Current tool: {managementTool}\n- Average lead time: {avgLeadTime}\n- Peak season months: {peakMonths}',
+            `[Objective]
+Convert inspection/quote/on-hold customers gathered May~August into confirmed September~December installation/repair/replacement reservations.
 
-[FIELD PROFILE BLOCK]
-
-[Objective]
-Convert inspection, quote, and on-hold customers gathered in May~August into confirmed September~December installation / repair / replacement reservations.
-
-[Required Management Columns]
-- 예약ID
-- 고객ID
-- 고객명
-- 연락처
-- 주소 / 단지명
-- 설치경과년수
-- 현재 보일러 모델
-- 리드등급
-- 현재상태
-- 보류사유
-- 희망공사월
-- 관심패키지
-- B/S 점검 결과
-- 주의항목수
-- 조치필요수
-- 다음컨택일
-- 담당자
-- 리뷰상태
-- 최종결과
-- 비고
+[Required Columns]
+예약ID, 고객ID, 고객명, 연락처, 주소/단지명, 설치경과년수, 현재 보일러 모델, 리드등급, 현재상태, 보류사유, 희망공사월, 관심패키지, B/S 점검 결과, 주의항목수, 조치필요수, 다음컨택일, 담당자, 리뷰상태, 최종결과, 비고.
 
 [Status Vocabulary]
 신규, 알림톡발송, 통화완료, 점검예약, 점검완료, 견적발송, 가족상담중, 타사비교중, 예약확정, 구매완료, 거절, 수신거부.
@@ -419,48 +391,358 @@ Convert inspection, quote, and on-hold customers gathered in May~August into con
 비용, 일정, 가족상담, 타사비교, 아직 정상작동, 임대인 승인 필요, 세입자 일정 미정.
 
 [Output Format]
-Produce a Korean-language table:
+Korean table:
 | 컬럼명 | 입력 예시 | 선택값 | 관리 목적 | 재콜 기준 | 담당자 메모 |
 
 [Writing Guidelines]
-- The structure must be directly copyable into Excel or Google Sheets.
+- Directly copyable into Excel/Google Sheets.
 - Define explicit A/B/C 리드등급 criteria.
-- Define operational rules to prevent missing the 다음컨택일 (next-contact-date).
-- Provide a re-call (재콜) script per hold-reason category.
-- Tie KPIs to the targets in the dealer profile.
-- End the deliverable with a Korean process flow titled "5월 알림톡 → 6월 무상점검 → 7월 리뷰·패키지 제안 → 8~9월 성수기 예약 확정".` + PROMPT_LANG_FOOTER
+- Define rules to prevent missed 다음컨택일.
+- Per-hold-reason 재콜 멘트.
+- End with process flow "5월 알림톡 → 6월 무상점검 → 7월 리뷰·패키지 제안 → 8~9월 성수기 예약 확정".`
+        )
     },
     {
-        id: "integrated",
-        title: "7대 산출물 통합 생성",
-        tag: "원클릭 전체 생성",
-        summary: "개별 산출물을 한 번에 생성하는 통합 프롬프트입니다.",
-        prompt: PROMPT_LANG_HEADER + `You are a senior consultant building the complete off-season sales toolkit for a Korean boiler dealer. Using the dealer profile below, produce the dealer's customized "비수기 보일러 영업 7대 실전 도구" in one pass.
+        id: 'complex',
+        title: '단지 공략 전략맵',
+        tag: '타깃 단지 선정',
+        summary: '후보 단지를 점수 매트릭스로 평가해 1~3순위 단지를 선정하고 진입 전술을 설계.',
+        fields: [
+            { id: 'candidateComplexes', label: '후보 단지 5개', placeholder: '고덕 그라시움\n명일 한양\n암사 동아', type: 'textarea' },
+            { id: 'complexAttributes', label: '단지 특성', placeholder: '가구수 / 입주연도 / 평균 평수', type: 'textarea' },
+            { id: 'pastInstalls', label: '과거 시공 이력', placeholder: '단지별 시공 건수', type: 'textarea' },
+        ],
+        sample: { candidateComplexes: '고덕 그라시움\n명일 한양\n암사 동아\n천호 우성\n둔촌 푸르지오', complexAttributes: '고덕 그라시움 4932세대 2019년식\n명일 한양 1342세대 2003년식\n암사 동아 1064세대 1999년식', pastInstalls: '고덕 그라시움 12건\n명일 한양 38건\n암사 동아 56건' },
+        outputSections: ['단지별 점수 매트릭스', '1~3순위 단지 + 근거', '단지별 진입 전술', '8주 단지 공략 캘린더'],
+        prompt: _wrap(
+            'a territory strategist for a Korean boiler dealer',
+            'Apartment Complex Targeting',
+            '- Candidate complexes (up to 5): {candidateComplexes}\n- Complex attributes: {complexAttributes}\n- Past installation history per complex: {pastInstalls}',
+            `[Objective]
+Identify which 1~3 complexes this dealer should attack first this off-season, and design specific entry tactics per complex.
 
-[FIELD PROFILE BLOCK]
-
-[Required Deliverables]
-1. 고객 DB 분류표
-2. 알림톡·해피콜 스크립트
-3. 클린 CS 체크리스트
-4. 하절기 B/S 안심점검표
-5. 업세일링 3대 패키지
-6. 지역 마케팅·SNS/리뷰 캘린더
-7. 성수기 예약 대장
-
-[Writing Principles for All 7 Deliverables]
-- Every deliverable must reflect the dealer's region, customer segment, field issues, and strengths.
-- Weave the owner's "현장 이야기" (field story) into scripts, KPI targets, and action items.
-- No abstract strategy language. Use tables, scripts, and checklists that staff can execute today.
-- Leave product names, prices, phone numbers, and complex names as [수정 필요] or [입력] placeholders for the owner.
-- Avoid pressure-sales tone. Frame everything around 예방점검 · 안전 · 겨울 전 준비 · 솔직 후기 요청.
+[Required Content]
+- Score matrix weighted equally: 가구수, 입주연도, 우리 시공이력, 경쟁사 침투 강도.
+- Top 3 ranking with explicit rationale (Korean).
+- Per-complex entry tactic: 게시판 / 입주민 단톡 / 관리사무소 협의 / 인근 점포 제휴 / QR 리뷰 콜렉션 등.
+- 8-week 단지 공략 캘린더.
 
 [Output Format]
-- Number each deliverable (1 through 7) as a top-level section.
-- Use tables, sample messages, phone scripts, checklists, and KPIs inside each section.
-- End the entire output with a section titled "이번 주 바로 실행할 10가지 액션" — 10 concrete actions the owner can start tomorrow.` + PROMPT_LANG_FOOTER
+Three Korean tables:
+| 단지명 | 가구수 | 입주연도 | 우리 시공 이력 | 경쟁 강도 | 종합 점수 | 우선순위 |
+| 단지명 | 진입 전술 | 핵심 메시지 | 사용 채널 | 1주차 액션 | KPI |
+| 주차 | 핵심 액션 | 담당자 | 산출물 |
+
+[Writing Guidelines]
+- Use the actual complex names and household counts from the inputs.
+- Each tactic must be executable this week.
+- End with "이번 주 바로 시작할 단지 공략 액션 7가지".`
+        )
+    },
+    {
+        id: 'competitor',
+        title: '경쟁사 차별화 포지셔닝',
+        tag: '메시지 · USP',
+        summary: '경쟁사 강점·약점을 분석하고 우리만의 차별화 메시지와 응대 스크립트를 만듭니다.',
+        fields: [
+            { id: 'mainCompetitors', label: '주요 경쟁사', placeholder: '예: ○○가스, △△설비', type: 'textarea' },
+            { id: 'competitorStrengths', label: '경쟁사 강점·약점', placeholder: '강점/약점을 적어주세요', type: 'textarea' },
+            { id: 'ourUSP', label: '우리만의 USP', placeholder: '우리 대리점이 자신 있는 것', type: 'textarea' },
+        ],
+        sample: { mainCompetitors: '○○가스 강동지사\n△△설비 (개인 사업자)', competitorStrengths: '○○가스: 본사 브랜드 신뢰도 높음 / 가격 저렴 / 단지 시공 경험 적음\n△△설비: 빠른 출장 / 사후 관리 미흡', ourUSP: '같은 단지 시공 50건 이상\n토요일 방문 가능\n점검 리포트 무료 제공\n강매 없음' },
+        outputSections: ['경쟁사 비교 매트릭스', '핵심 차별화 메시지 5종', '경쟁사 비교 시 응대 스크립트', '광고/리뷰 카피 5종'],
+        prompt: _wrap(
+            'a positioning strategist for a Korean boiler dealer',
+            'Competitive Differentiation',
+            '- Main competitors: {mainCompetitors}\n- Competitor strengths/weaknesses: {competitorStrengths}\n- Our USPs: {ourUSP}',
+            `[Objective]
+Identify the dealer's unique positioning vs. main competitors, and produce sales messages + customer-facing scripts that win the consultation when a customer says "다른 데도 알아보고 있어요".
+
+[Required Content]
+- Competitor comparison matrix: 가격대, 출장 속도, AS, 단지 시공 경험, 사장님 신뢰도, 사후 관리.
+- 5 핵심 차별화 메시지 (one-liners, Korean).
+- Customer-facing script for "다른 데도 알아보고 있어요" with 3 versions (가격 비교형 / AS 비교형 / 사장님 신뢰형).
+- 5 광고/리뷰 카피 (Naver Place 공지, 지역카페 댓글, 알림톡 1줄, QR 리뷰카드 문구, 명함 뒷면).
+
+[Output Format]
+Korean tables and bullet lists.
+
+[Writing Guidelines]
+- Never disparage competitors directly. Position our strengths as customer benefit.
+- All scripts in Korean honorifics (해요체).
+- End with "고객이 '○○가스가 더 싸요'라고 할 때 30초 응답법".`
+        )
+    },
+    {
+        id: 'b2b',
+        title: '상가·임대인 B2B 영업 확장',
+        tag: 'B2B 플레이북',
+        summary: '상가·임대인·대형 단지 관리사무소를 대상으로 한 B2B 확장 플레이북.',
+        fields: [
+            { id: 'targetCommercial', label: '타깃 상가 유형', placeholder: '예: 음식점, 미용실, 모텔, 학원' },
+            { id: 'targetLandlords', label: '타깃 임대인 풀', placeholder: '예: 다세대 5호 이상 보유 임대인', type: 'textarea' },
+            { id: 'b2bCurrentRatio', label: '현재 B2B 매출 비중', placeholder: '예: 약 12%' },
+        ],
+        sample: { targetCommercial: '음식점, 미용실, 모텔, 학원, 헬스장', targetLandlords: '다세대 5호 이상 보유 임대인\n오피스텔 관리회사\n원룸 건물주', b2bCurrentRatio: '약 15% (목표 30%)' },
+        outputSections: ['타깃 B2B 세그먼트 5종', 'B2B 제안서 템플릿', '계약 단가표', '관리사무소 협의 스크립트', 'B2B 영업 12주 로드맵'],
+        prompt: _wrap(
+            'a B2B sales strategist expanding a Korean boiler dealer into commercial / landlord channels',
+            'B2B Commercial / Landlord Expansion',
+            '- Target commercial types: {targetCommercial}\n- Target landlord pool: {targetLandlords}\n- Current B2B revenue ratio: {b2bCurrentRatio}',
+            `[Objective]
+Expand into commercial tenants (상가) and landlord-owned multi-unit properties (다세대/오피스텔/원룸 건물주) to stabilize off-season revenue.
+
+[Required Content]
+- 5 B2B target segments with size estimates and pain points.
+- B2B 제안서 1-page template (대상, 우리 강점, 가격 구조, 사후관리, 시공 후 보장).
+- Contract unit-pricing table (호당 / 평당 / 월 정기 점검비).
+- 관리사무소 협의 스크립트 (5분 미팅용).
+- 12-week B2B sales roadmap.
+
+[Output Format]
+Korean tables, sample 제안서, sample scripts.
+
+[Writing Guidelines]
+- B2B contracts emphasize 영업중단 최소화, 정기 점검, 단가 안정.
+- Include "임대인이 자주 묻는 5가지" objection-handling.
+- End with "이번 주 만나야 할 B2B 타깃 5곳".`
+        )
+    },
+    {
+        id: 'kpi',
+        title: '기사 KPI · 인센티브 설계',
+        tag: '인사 · 동기부여',
+        summary: '기사·직원의 KPI 지표와 인센티브 구조, 월말 평가 양식을 설계합니다.',
+        fields: [
+            { id: 'techCount', label: '기사 인원', placeholder: '예: 3명 (정직원 2 + 외주 1)' },
+            { id: 'avgWage', label: '평균 임금', placeholder: '예: 정직원 월 320만원' },
+            { id: 'existingIncentive', label: '기존 인센티브', placeholder: '현재 운영 중인 인센티브가 있다면', type: 'textarea' },
+        ],
+        sample: { techCount: '정직원 2명 + 외주 1명', avgWage: '정직원 320만원, 외주 건당 4만원', existingIncentive: '월 매출 3000만 초과 시 5% 보너스\n리뷰 1건당 5천원' },
+        outputSections: ['KPI 지표 8개 (정의·산식·목표·가중치)', '인센티브 구조표', '월말 평가 양식', '동기부여 멘트 모음'],
+        prompt: _wrap(
+            'a sales-operations consultant designing field-staff KPI and incentive structure for a Korean boiler dealer',
+            'Technician KPI & Incentive Design',
+            '- Technician count: {techCount}\n- Average wage / contractor rate: {avgWage}\n- Existing incentive structure: {existingIncentive}',
+            `[Objective]
+Design 6~8 measurable KPIs for technicians and an incentive structure that motivates inspection completion, review collection, upsell, and CS quality.
+
+[Required KPIs]
+- 무상점검 완료율, 견적 전환율, 리뷰 획득율, 재방문 비율, CS 불만율, 패키지 업세일 건수, 성수기 예약 전환율, 평균 객단가.
+
+[Output Format]
+Korean tables:
+| KPI 지표 | 정의 | 산식 | 월 목표 | 가중치 | 평가 방법 |
+| 등급 | 조건 | 인센티브 | 비고 |
+| 평가 항목 | 점수 | 코멘트 |
+
+[Writing Guidelines]
+- Avoid over-pressure tone — KPIs should feel achievable.
+- Include peer-comparison style ("3명 중 1등 기사 보너스") AND absolute targets.
+- Add "월말 1-1 면담 멘트 5종" for 사장님 → 기사.
+- End with "이번 달 핵심 KPI 3개와 1개 보너스 캠페인".`
+        )
+    },
+    {
+        id: 'cashflow',
+        title: '분기별 현금흐름·손익 시뮬레이션',
+        tag: '재무 · 비수기 생존',
+        summary: '월 매출/고정비/비수기 하락폭을 기반으로 분기별 현금흐름과 손익을 시뮬레이션.',
+        fields: [
+            { id: 'monthlyRevenue', label: '월 매출 평균', placeholder: '예: 4500만원' },
+            { id: 'offSeasonDrop', label: '비수기 매출 하락폭', placeholder: '예: 성수기 대비 40% 감소' },
+            { id: 'fixedCost', label: '월 고정비', placeholder: '예: 임차 200만, 인건비 1800만, 기타 300만', type: 'textarea' },
+        ],
+        sample: { monthlyRevenue: '평균 4800만원 (성수기 7500만, 비수기 2900만)', offSeasonDrop: '약 40~45% 감소', fixedCost: '임차 220만\n인건비 정직원 2명 640만\n외주비 평균 200만\n기타(차량, 보험, 통신) 280만' },
+        outputSections: ['12개월 현금흐름 표', '분기별 손익 시뮬레이션', '비수기 자금 보강 옵션 5개', '월 단위 액션 캘린더'],
+        prompt: _wrap(
+            'a financial planner advising a Korean boiler dealer on off-season cash management',
+            'Quarterly Cashflow & P&L Simulation',
+            '- Monthly revenue (avg / peak / off): {monthlyRevenue}\n- Off-season revenue drop: {offSeasonDrop}\n- Monthly fixed costs: {fixedCost}',
+            `[Objective]
+Project the dealer's 12-month cashflow and quarterly P&L. Identify which months go negative, and propose concrete corrective actions before they hit.
+
+[Required Content]
+- 12-month cashflow table (월 매출 / 변동비 / 고정비 / 영업이익 / 누적 현금).
+- Quarterly P&L summary with key ratios (영업이익률, BEP 도달월).
+- 5 corrective options ranked by feasibility: 비수기 알림톡 캠페인, B2B 정기점검 계약, 외주 비중 조정, 단가 조정, 운영자금 대출 등.
+- Month-by-month action calendar.
+
+[Output Format]
+Korean tables, simulated numbers based on the dealer's inputs.
+
+[Writing Guidelines]
+- Use Korean Won (만원 단위).
+- All assumptions clearly stated.
+- End with "이번 분기 사장님이 결정해야 할 재무 의사결정 3가지".`
+        )
+    },
+    {
+        id: 'vip',
+        title: 'VIP 락인 · 추천 마케팅',
+        tag: '리텐션 · 추천',
+        summary: 'VIP 정의·혜택·추천 마케팅 흐름을 설계해 안정적인 매출 기반을 만듭니다.',
+        fields: [
+            { id: 'vipDefinition', label: 'VIP 정의', placeholder: '예: 3년 이상 거래 + 2회 이상 시공' },
+            { id: 'vipCount', label: '현재 VIP 수', placeholder: '예: 약 80명' },
+            { id: 'vipBenefits', label: '보유 혜택', placeholder: '있다면 적어주세요', type: 'textarea' },
+        ],
+        sample: { vipDefinition: '3년 이상 거래 + 2회 이상 시공 또는 단지 추천자', vipCount: '약 80명', vipBenefits: '연 1회 무상점검\n신제품 출시 시 5% 우선 할인' },
+        outputSections: ['VIP 등급 정의 (Silver/Gold/Platinum)', 'VIP 전용 혜택 매트릭스', '추천 마케팅 룰', 'VIP 전용 알림톡 시즌별 3종', '리텐션 KPI'],
+        prompt: _wrap(
+            'a retention marketing consultant for a Korean boiler dealer',
+            'VIP Lock-in & Referral Marketing',
+            '- Current VIP definition: {vipDefinition}\n- Current VIP count: {vipCount}\n- Existing VIP benefits: {vipBenefits}',
+            `[Objective]
+Lock in high-value customers and turn them into referral engines that bring 1~2 new customers each per year.
+
+[Required Content]
+- VIP 등급 정의: Silver / Gold / Platinum with explicit qualification rules.
+- VIP 전용 혜택 매트릭스 (점검 우선, 가족 할인, 단지 추천 보상 등).
+- 추천 마케팅 룰 (1인 추천 → 시공 시 양측 보상).
+- VIP 전용 알림톡 3종 (봄점검 / 여름안심 / 겨울예약).
+- Retention KPIs (재구매율, 추천 건수, NPS).
+
+[Output Format]
+Korean tables and sample messages.
+
+[Writing Guidelines]
+- VIP 혜택은 가족/이웃까지 확장 가능하게 설계.
+- 추천 보상은 현금보다 무상점검·연료비 지원 같은 서비스성 보상 위주.
+- End with "이번 주 VIP 80명에게 보낼 알림톡 초안".`
+        )
+    },
+    {
+        id: 'unified',
+        title: '고객 응대 통합 매뉴얼',
+        tag: '응대 표준화',
+        summary: '전화/문자/방문/AS를 모두 아우르는 통합 응대 매뉴얼.',
+        fields: [
+            { id: 'responseChannels', label: '응대 채널', placeholder: '예: 전화, 알림톡, 방문, AS 콜센터' },
+            { id: 'staffSize', label: '직원 인원', placeholder: '예: 사장 1, 사무 1, 기사 3' },
+            { id: 'existingManual', label: '현재 매뉴얼 유무', placeholder: '있으면 어떤 형태인지' },
+        ],
+        sample: { responseChannels: '전화, 카카오 알림톡, 문자, 방문, AS 콜', staffSize: '사장 1명 + 사무직 1명 + 기사 3명', existingManual: '엑셀 매크로 + 출력본 1장' },
+        outputSections: ['채널별 응대 흐름도', '표준 응대 멘트 모음', '응대 시간 SLA', 'CRM 입력 규칙', '주간 응대 품질 점검표'],
+        prompt: _wrap(
+            'a customer-service operations consultant for a Korean boiler dealer',
+            'Unified Customer Response Manual',
+            '- Active response channels: {responseChannels}\n- Staff size: {staffSize}\n- Existing manual status: {existingManual}',
+            `[Objective]
+Standardize customer interactions across phone / text / visit / AS so any staff member gives a consistent, polite, and trackable response.
+
+[Required Content]
+- Channel-by-channel response flowchart (전화 / 알림톡 / 방문 / AS).
+- Standardized verbal/written templates (Korean honorifics).
+- Response-time SLAs (전화 3코 내, 알림톡 30분, AS 24시간 내).
+- CRM input rules (필수 입력 항목, 후속 콘택 일정).
+- Weekly response-quality audit checklist.
+
+[Output Format]
+Korean tables and sample templates.
+
+[Writing Guidelines]
+- Differentiate inbound vs outbound flows.
+- Add "어려운 고객" 응대 5종 (감정 격앙, 무리한 환불 요구, 가격 협상 강요 등).
+- End with "이번 주 직원 교육 30분 커리큘럼".`
+        )
+    },
+    {
+        id: 'integrated',
+        title: '비수기 작전 통합 리포트',
+        tag: '원클릭 통합',
+        summary: '14개 영업 산출물을 우선순위 3개로 압축해 즉시 실행 가능한 통합 리포트.',
+        fields: [
+            { id: 'priorityOutputs', label: '우선 산출물 3개', placeholder: 'DB 분류표, B/S 점검표, 마케팅 캘린더', type: 'textarea' },
+            { id: 'kpiGoals', label: '목표 KPI', placeholder: '무상점검 50건, 예약 15건, 리뷰 10건', type: 'textarea' },
+            { id: 'timeline', label: '실행 기간', placeholder: '예: 5월 ~ 8월 (16주)' },
+        ],
+        sample: { priorityOutputs: '고객 DB 분류표\n알림톡·해피콜 스크립트\n하절기 B/S 안심점검표', kpiGoals: '무상점검 50건\n예약 15건\n리뷰 10건\n객단가 +20%', timeline: '5월 1주 ~ 8월 4주 (총 16주)' },
+        outputSections: ['우선순위 3개 산출물 통합 요약', '16주 실행 캘린더', '주간 KPI 대시보드', '주차별 사장님 의사결정 포인트'],
+        prompt: _wrap(
+            'a senior consultant compiling an integrated off-season sales report for a Korean boiler dealer',
+            'Integrated Off-Season Operations Report',
+            '- Priority deliverables (3): {priorityOutputs}\n- KPI goals: {kpiGoals}\n- Execution timeline: {timeline}',
+            `[Objective]
+Compile the dealer's TOP 3 chosen deliverables into one integrated execution report that staff can run for the next 16 weeks.
+
+[Required Content]
+- Summary of each priority deliverable (1 page each, Korean).
+- Combined 16-week 실행 캘린더 mapping all 3 deliverables.
+- 주간 KPI 대시보드 (수치 + 신호등 색상).
+- 주차별 사장님 의사결정 포인트 (e.g., 주차 4: B/S 결과 기반 패키지 가격 확정).
+
+[Output Format]
+Korean tables, weekly calendar, KPI dashboard mock.
+
+[Writing Guidelines]
+- All staff can execute without re-asking 사장님.
+- Reflect the dealer's profile and the 3 chosen deliverables explicitly.
+- End with "이번 주 사장님이 결정할 1가지 + 직원이 시작할 5가지".`
+        )
+    },
+    {
+        id: 'fortune',
+        title: '🔮 오늘의 운세 (Easter Egg)',
+        tag: '이스터에그',
+        summary: '세계 각국의 점술 체계를 합친 재미용 운세 생성기. 영업과는 무관, 잠깐의 휴식용 🍀',
+        fields: [
+            { id: 'fortuneMethod', label: '운세 방법', placeholder: '예: 사주팔자 + 타로카드', type: 'textarea' },
+            { id: 'userInfo', label: '본인 정보 (선택)', placeholder: '생년월일, 별자리, MBTI, 혈액형 등 (원하는 만큼)', type: 'textarea' },
+            { id: 'fortuneTone', label: '톤', placeholder: '진지 / 유머러스 / 시적 / 밈/인터넷 감성' },
+            { id: 'fortuneLength', label: '분량', placeholder: '짧게 (5줄) / 중간 (10줄) / 길게 (20줄)' },
+        ],
+        sample: { fortuneMethod: '동양 사주팔자\n타로카드', userInfo: '1992년 7월 14일생\n게자리 / INFP / O형', fortuneTone: '유머러스하지만 따뜻한 톤', fortuneLength: '중간 (10줄 내외)' },
+        outputSections: ['🌟 전체 운', '💕 연애운', '💰 금전운', '🩺 건강운', '🔢 행운의 숫자', '🎨 행운의 색', '✨ 오늘의 한 줄'],
+        prompt: PROMPT_LANG_HEADER + `You are a fortune teller who has studied divination systems from all over the world. Today, generate a daily fortune using ONLY the method(s) the user has specified.
+
+[Available Methods]
+- 서양 별자리 점성술 (Western astrology)
+- 동양 사주팔자 (Korean four pillars)
+- 타로카드 (Tarot)
+- 오행 (Five elements)
+- 혈액형 운세 (Blood type)
+- 수비학 (Numerology)
+- 켈트 드루이드 점술 (Celtic Druid)
+- 북유럽 룬 점 (Norse runes)
+- 중국 십이지 (Chinese zodiac)
+- 인도 베다 점성술 (Vedic astrology)
+- 이집트 별자리 (Egyptian zodiac)
+- 마야 달력 점술 (Mayan calendar)
+- 일본 오미쿠지 (Omikuji)
+- 커피 찌꺼기 점 (Coffee grounds)
+- I Ching / 주역 (I Ching)
+- 손금 (Palmistry)
+- 꿈 해몽 (Dream interpretation)
+- MBTI 기반 운세 (MBTI fortune)
+- AI 랜덤 카오스 운세 (AI random chaos)
+- 밈/인터넷 감성 운세 (Meme/Internet vibe)
+
+[User Inputs]
+- Selected method(s): {fortuneMethod}
+- User info (optional): {userInfo}
+- Tone: {fortuneTone}
+- Length: {fortuneLength}
+
+[Output Rules]
+1. MUST use ONLY the specified method(s). Do not mix in unspecified systems.
+2. Naturally reflect the characteristic terminology, symbols, and aesthetic of the chosen method.
+3. Follow the requested tone EXACTLY. "밈/인터넷 감성" should sound like a Korean Twitter/Reddit/디시인사이드 post; "진지" should sound like a serious oracle reading; "시적" should be lyrical; "유머러스" should make the reader smile.
+4. Follow the requested length.
+5. If multiple methods are chosen, weave them together but label which method each insight came from.
+
+[Required Output Sections — all in Korean]
+🌟 전체 운
+💕 연애운
+💰 금전운
+🩺 건강운
+🔢 행운의 숫자
+🎨 행운의 색
+✨ 오늘의 한 줄 (선택한 점술 방법의 분위기를 살린 마무리 한 문장)
+
+이건 재미용 콘텐츠입니다. 너무 무겁지 않게, 보일러 대리점장 사장님이 잠깐 웃고 다시 영업하러 갈 수 있는 분량으로 작성해주세요.` + PROMPT_LANG_FOOTER
     }
-];
+]
 
 // Prompt State
 let p_current = 0;
@@ -468,7 +750,6 @@ let p_paused = false;
 let p_progress = 0;
 const p_intervalMs = 8200;
 let p_timer;
-const p_fieldIds = ['dealer','region','customers','housing','issues','quotes','strengths','equipment','goals','story'];
 
 // Core Dashboard State
 let dailyChartInstance = null;
@@ -489,7 +770,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initMonthlyChart();
     renderMonthlyContent("5");
 
-    p_renderTabs();
+    p_renderCommonFields();
+    p_render();
     p_sample();
     p_timer = setInterval(p_tick, 200);
 
@@ -529,7 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('p-prevBtn').onclick = p_prev;
     document.getElementById('p-sampleBtnTop').onclick = p_sample;
     document.getElementById('p-clearBtn').onclick = p_clearForm;
-    document.getElementById('p-generateBtn').onclick = p_generateDemo;
+    document.getElementById('p-generateBtn').onclick = () => p_render();
     document.getElementById('p-copyCurrentBtn').onclick = () => p_copyText(p_hydratedPrompt(PROMPTS[p_current]));
     document.getElementById('p-copyOutputBtn').onclick = () => p_copyText(document.getElementById('p-outputText').innerText);
     document.getElementById('p-copyAllBtn').onclick = () => p_copyText(PROMPTS.map((p,i)=>`# ${i+1}. ${p.title}\n\n${p.prompt}`).join('\n\n---\n\n'));
@@ -544,12 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(document.getElementById('p-pauseBtn').textContent.includes('일시정지')) p_paused = false;
     });
 
-    p_fieldIds.forEach(id => {
-        document.getElementById(`p-${id}`).addEventListener('input', () => {
-            p_render();
-            p_generateDemo();
-        });
-    });
+    p_renderCommonFields();
 });
 
 // --- 4. VIEW NAVIGATION LOGIC ---
@@ -1015,49 +1292,114 @@ function initMonthlyChart() {
 }
 
 // --- 7. AI PROMPT STUDIO LOGIC ---
-function p_getData(){
-    const data = {};
-    p_fieldIds.forEach(id => data[id] = (document.getElementById(`p-${id}`).value || '').trim());
-    return data;
-}
 function p_safe(v, fallback){ return v && v.length ? v : fallback; }
-function p_lines(v){ return p_safe(v,'').split(/[\n,\/]+/).map(s=>s.trim()).filter(Boolean); }
+function p_lines(v){ return p_safe(v,'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean); }
 function p_asBullets(v, fallback){
     const arr = p_lines(v);
     return (arr.length ? arr : fallback).map(x=>'   - '+x).join('\n');
 }
-function p_contextBlock(){
-    const d = p_getData();
-    return `[Our Dealer Field Profile]
 
-1. Dealer name (대리점명): ${p_safe(d.dealer,'[input]')}
-2. Service area (담당 지역): ${p_safe(d.region,'[input]')}
-3. Primary customer segment (주요 고객층): ${p_safe(d.customers,'[input]')}
-4. Primary housing types (주요 주거 형태): ${p_safe(d.housing,'[input]')}
-5. Frequent field issues (자주 나오는 현장 문제):
-${p_asBullets(d.issues,['[input]'])}
-6. Common customer remarks (최근 고객이 많이 하는 말):
-${p_asBullets(d.quotes,['[input]'])}
-7. Our dealer's strengths (우리 대리점의 강점):
-${p_asBullets(d.strengths,['[input]'])}
-8. Equipment and services we have (보유 장비 및 서비스):
-${p_asBullets(d.equipment,['[input]'])}
-9. This month's targets (이번 달 목표): ${p_safe(d.goals,'[input]')}
-10. Field story the owner wants to highlight (사장님이 꼭 넣고 싶은 현장 이야기):
-   ${p_safe(d.story,'[input]')}`;
+// Returns a flat object of all field values: common + current prompt's specific fields.
+function p_getDataFor(prompt){
+    const data = {};
+    for (const f of COMMON_FIELDS) {
+        const el = document.getElementById('p-' + f.id);
+        data[f.id] = el ? (el.value || '').trim() : '';
+    }
+    for (const f of (prompt && prompt.fields) || []) {
+        const el = document.getElementById('p-' + f.id);
+        data[f.id] = el ? (el.value || '').trim() : '';
+    }
+    return data;
 }
+
+function p_formatValue(v){
+    if (!v || !v.length) return '[입력]';
+    if (v.includes('\n')) {
+        return v.split('\n').map(s=>s.trim()).filter(Boolean).join(' / ');
+    }
+    return v;
+}
+
 function p_hydratedPrompt(prompt){
-    return prompt.prompt.replace('[FIELD PROFILE BLOCK]', p_contextBlock());
+    const data = p_getDataFor(prompt);
+    return prompt.prompt.replace(/\{(\w+)\}/g, (_, k) => p_formatValue(data[k]));
+}
+
+// Render a single input field (label + input/textarea) and bind input listener.
+function p_renderField(container, f, onChange){
+    const wrap = document.createElement('div');
+    wrap.className = 'space-y-1';
+    const label = document.createElement('label');
+    label.className = 'block font-bold text-stone-700 text-xs';
+    label.textContent = f.label;
+    wrap.appendChild(label);
+    let input;
+    if (f.type === 'textarea') {
+        input = document.createElement('textarea');
+        input.className = 'w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow';
+    } else {
+        input = document.createElement('input');
+        input.className = 'w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow';
+    }
+    input.id = 'p-' + f.id;
+    input.placeholder = f.placeholder || '';
+    if (f.id in p_inputCache) input.value = p_inputCache[f.id];
+    input.addEventListener('input', () => {
+        p_inputCache[f.id] = input.value;
+        onChange();
+    });
+    wrap.appendChild(input);
+    container.appendChild(wrap);
+}
+
+// Cache of all field values so values persist when switching prompts.
+const p_inputCache = {};
+
+function p_renderCommonFields(){
+    const container = document.getElementById('p-common-fields');
+    if (!container) return;
+    container.innerHTML = '';
+    for (const f of COMMON_FIELDS) {
+        p_renderField(container, f, () => { p_updatePromptText(); });
+    }
+}
+
+function p_renderSpecificFields(prompt){
+    const container = document.getElementById('p-specific-fields');
+    if (!container) return;
+    container.innerHTML = '';
+    const fields = (prompt && prompt.fields) || [];
+    if (fields.length === 0) {
+        container.innerHTML = '<p class="text-xs text-stone-400 italic">이 프롬프트는 공통 입력만 사용합니다.</p>';
+        return;
+    }
+    for (const f of fields) {
+        p_renderField(container, f, () => { p_updatePromptText(); });
+    }
+}
+
+function p_updatePromptText(){
+    const p = PROMPTS[p_current];
+    const text = p_hydratedPrompt(p);
+    const el = document.getElementById('p-promptText');
+    if (el) el.textContent = text;
 }
 
 function p_renderTabs(){
     const tabsContainer = document.getElementById('p-tabs');
+    if (!tabsContainer) return;
     tabsContainer.innerHTML = '';
     PROMPTS.forEach((p,i)=>{
         const b = document.createElement('button');
-        b.className = `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${i===p_current ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'}`;
+        const isFortune = p.id === 'fortune';
+        const active = i === p_current;
+        const baseColor = isFortune
+            ? (active ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100')
+            : (active ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100');
+        b.className = `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${baseColor}`;
         b.textContent = `${String(i+1).padStart(2,'0')} ${p.title.replace(' 생성','')}`;
-        b.onclick = () => { p_current = i; p_progress = 0; p_render(); p_generateDemo(); };
+        b.onclick = () => { p_current = i; p_progress = 0; p_render(); };
         tabsContainer.appendChild(b);
     });
 }
@@ -1067,13 +1409,15 @@ function p_render(){
     document.getElementById('p-promptTag').textContent = p.tag;
     document.getElementById('p-promptTitle').textContent = p.title;
     document.getElementById('p-promptSummary').textContent = p.summary;
-    document.getElementById('p-promptText').textContent = p_hydratedPrompt(p);
     document.getElementById('p-counter').textContent = `${p_current+1} / ${PROMPTS.length}`;
+    p_renderSpecificFields(p);
+    p_updatePromptText();
     p_renderTabs();
+    p_renderDemo(p);
 }
 
-function p_next(){ p_current = (p_current + 1) % PROMPTS.length; p_progress = 0; p_render(); p_generateDemo(); }
-function p_prev(){ p_current = (p_current - 1 + PROMPTS.length) % PROMPTS.length; p_progress = 0; p_render(); p_generateDemo(); }
+function p_next(){ p_current = (p_current + 1) % PROMPTS.length; p_progress = 0; p_render(); }
+function p_prev(){ p_current = (p_current - 1 + PROMPTS.length) % PROMPTS.length; p_progress = 0; p_render(); }
 
 function p_tick(){
     if(p_paused || document.getElementById('view-prompt').classList.contains('hidden')) return;
@@ -1084,6 +1428,7 @@ function p_tick(){
 
 function showToast(msg='복사되었습니다.') {
     const toast = document.getElementById('toast');
+    if (!toast) return;
     toast.textContent = msg;
     toast.classList.remove('translate-y-20', 'opacity-0');
     setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 2000);
@@ -1092,243 +1437,82 @@ function showToast(msg='복사되었습니다.') {
 async function p_copyText(text){ await navigator.clipboard.writeText(text); showToast(); }
 
 function p_sample(){
-    const sampleData = {
-        dealer:'○○보일러 강동대리점',
-        region:'서울 강동구 고덕동, 명일동, 암사동',
-        customers:'15년 이상 구축 아파트 거주자, 고령자 가정, 맞벌이 부부',
-        housing:'구축 아파트와 빌라가 많음',
-        issues:'온수 나오는 시간이 오래 걸림\n겨울철 난방 편차가 큼\n보일러 소음과 배기통 노후 문의가 많음',
-        quotes:'아직 고장은 안 났어요.\n겨울에만 쓰는데 지금 점검해야 하나요?\n일단 가격만 알려주세요.',
-        strengths:'같은 단지 시공 경험이 많음\n토요일 오전 방문 가능\n설치 후 사용법 설명과 체크콜 제공',
-        equipment:'공기질 측정기 있음\n수질 간이키트 있음\nQR 리뷰카드 있음\n보양매트와 덧신 준비',
-        goals:'무상점검 50건, 견적 20건, 성수기 예약 15건, 리뷰 10건',
-        story:'작년 겨울 고덕동 구축 아파트에서 온수 지연과 난방 편차 문의가 많았다. 고객들은 고장 전 교체 필요성을 잘 못 느끼기 때문에 올해는 여름 무료점검으로 현재 상태를 보여주고 겨울 전 미리 예약을 잡는 방식으로 운영하고 싶다.'
-    };
-    Object.entries(sampleData).forEach(([k,v]) => document.getElementById(`p-${k}`).value = v);
-    p_render(); p_generateDemo(); showToast('예시 데이터가 입력되었습니다.');
+    Object.entries(COMMON_SAMPLE).forEach(([k,v]) => {
+        p_inputCache[k] = v;
+        const el = document.getElementById('p-' + k);
+        if (el) el.value = v;
+    });
+    const p = PROMPTS[p_current];
+    Object.entries(p.sample || {}).forEach(([k,v]) => {
+        p_inputCache[k] = v;
+        const el = document.getElementById('p-' + k);
+        if (el) el.value = v;
+    });
+    p_updatePromptText();
+    p_renderDemo(p);
+    showToast('예시 데이터가 입력되었습니다.');
 }
 
 function p_clearForm(){
-    p_fieldIds.forEach(id => document.getElementById(`p-${id}`).value='');
-    p_render(); p_generateDemo(); showToast('입력값을 초기화했습니다.');
+    for (const f of COMMON_FIELDS) {
+        delete p_inputCache[f.id];
+        const el = document.getElementById('p-' + f.id);
+        if (el) el.value = '';
+    }
+    const p = PROMPTS[p_current];
+    for (const f of (p.fields || [])) {
+        delete p_inputCache[f.id];
+        const el = document.getElementById('p-' + f.id);
+        if (el) el.value = '';
+    }
+    p_updatePromptText();
+    p_renderDemo(p);
+    showToast('입력값을 초기화했습니다.');
 }
 
-function d_common(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">🏢 대리점 현장정보 요약</h3>
-        <div class="grid grid-cols-2 gap-4 text-sm">
-            <div class="bg-stone-50 p-3 rounded-lg border border-stone-200">
-                <p class="text-stone-500 text-xs font-bold mb-1">대리점명 / 지역</p>
-                <p class="font-semibold text-sky-700">${p_safe(d.dealer,'미입력')} <br> <span class="text-stone-700 font-normal text-xs">📍 ${p_safe(d.region,'지역 미입력')}</span></p>
-            </div>
-            <div class="bg-stone-50 p-3 rounded-lg border border-stone-200">
-                <p class="text-stone-500 text-xs font-bold mb-1">주요 타겟</p>
-                <p class="font-semibold text-stone-800">${p_safe(d.customers,'고객층 미입력')}</p>
-                <p class="text-xs text-stone-600 mt-1">🏠 ${p_safe(d.housing,'주거 형태 미입력')}</p>
-            </div>
-        </div>
-        <div class="bg-blue-50 border-l-4 border-blue-500 p-3 rounded-r-lg">
-            <p class="text-blue-800 font-bold text-xs mb-1">🚨 주요 현장 문제</p>
-            <ul class="list-disc pl-4 text-sm text-blue-900">${p_asBullets(d.issues,['미입력']).split('\n').map(l=>`<li>${l.replace('- ','')}</li>`).join('')}</ul>
-        </div>
-    </div>`;
-}
-function d_db(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">📊 고객 DB 분류 도표</h3>
-        <div class="overflow-x-auto border border-stone-200 rounded-lg shadow-sm">
-            <table class="min-w-full divide-y divide-stone-200 text-sm text-left">
-                <thead class="bg-stone-100 text-stone-600">
-                    <tr><th class="px-3 py-2 font-semibold">등급</th><th class="px-3 py-2 font-semibold">타깃 고객군</th><th class="px-3 py-2 font-semibold">필터 조건</th><th class="px-3 py-2 font-semibold">추천 멘트</th></tr>
-                </thead>
-                <tbody class="divide-y divide-stone-200 bg-white">
-                    <tr><td class="px-3 py-2"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold text-xs">A급</span></td><td class="px-3 py-2 font-semibold">교체 임박</td><td class="px-3 py-2 text-stone-600">설치 7년 이상, 잦은 AS</td><td class="px-3 py-2 italic text-xs">"급하게 바꾸기 전, 상태만 확인해드릴게요."</td></tr>
-                    <tr><td class="px-3 py-2"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-bold text-xs">B급</span></td><td class="px-3 py-2 font-semibold">온수 불만</td><td class="px-3 py-2 text-stone-600">온수 지연, 온도 편차</td><td class="px-3 py-2 italic text-xs">"실제 불편하신 온수 문제부터 보겠습니다."</td></tr>
-                    <tr><td class="px-3 py-2"><span class="bg-sky-100 text-sky-700 px-2 py-0.5 rounded font-bold text-xs">C급</span></td><td class="px-3 py-2 font-semibold">가격 보류</td><td class="px-3 py-2 text-stone-600">견적 문의 후 미구매</td><td class="px-3 py-2 italic text-xs">"성수기 전 우선 연락 명단에 올려드릴까요?"</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>`;
-}
-function d_call(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">💬 스마트 해피콜 스크립트</h3>
-        <div class="bg-stone-100 p-4 rounded-xl flex flex-col space-y-3">
-            <div class="self-start max-w-[80%] bg-white p-3 rounded-2xl rounded-tl-none shadow-sm border border-stone-200">
-                <p class="text-xs font-bold text-stone-400 mb-1">상담원 (오프닝)</p>
-                <p class="text-sm">"안녕하세요, ${p_safe(d.dealer,'○○대리점')}입니다. 지난 겨울 보일러 쓰시면서 <strong class="text-sky-600">${p_safe(d.issues,'불편하셨던 점')}</strong>은 없으셨나요?"</p>
-            </div>
-            <div class="self-end max-w-[80%] bg-sky-500 p-3 rounded-2xl rounded-tr-none shadow-sm text-white">
-                <p class="text-xs font-bold text-sky-200 mb-1">고객 (거절 반응)</p>
-                <p class="text-sm">"${p_safe(d.quotes,'아직 고장은 안 났어요. 멀쩡해요.')}"</p>
-            </div>
-            <div class="self-start max-w-[80%] bg-white p-3 rounded-2xl rounded-tl-none shadow-sm border border-stone-200">
-                <p class="text-xs font-bold text-emerald-500 mb-1">상담원 (대응/제안)</p>
-                <p class="text-sm">"맞습니다! 그래서 고장 난 뒤가 아니라, 멀쩡할 때 겨울 전 상태만 출장비 없이 확인해드리는 <strong>무상 예방점검</strong> 기간입니다. 편하신 요일이 언제실까요?"</p>
-            </div>
-        </div>
-    </div>`;
-}
-function d_cs(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">✨ 클린 CS 현장 체크리스트</h3>
-        <div class="grid gap-3">
-            <div class="flex items-center p-3 bg-white border border-stone-200 rounded-lg shadow-sm">
-                <div class="bg-emerald-100 text-emerald-600 p-2 rounded-full mr-3 text-xs">✔️</div>
-                <div>
-                    <p class="font-bold text-sm">출발 전 / 자택 진입</p>
-                    <p class="text-xs text-stone-500">유니폼·덧신 착용 필수. 소속 및 방문 목적(${p_safe(d.dealer,'대리점')}) 명확히 고지</p>
-                </div>
-            </div>
-            <div class="flex items-center p-3 bg-white border border-stone-200 rounded-lg shadow-sm">
-                <div class="bg-emerald-100 text-emerald-600 p-2 rounded-full mr-3 text-xs">✔️</div>
-                <div>
-                    <p class="font-bold text-sm">점검 중 (공감)</p>
-                    <p class="text-xs text-stone-500">"${p_safe(d.issues,'온수·소음')}" 등 고객 불편 키워드 집중 경청 및 사진 촬영 전 동의</p>
-                </div>
-            </div>
-            <div class="flex items-center p-3 bg-white border border-stone-200 rounded-lg shadow-sm">
-                <div class="bg-emerald-100 text-emerald-600 p-2 rounded-full mr-3 text-xs">✔️</div>
-                <div>
-                    <p class="font-bold text-sm">결과 설명 및 퇴실</p>
-                    <p class="text-xs text-stone-500">정상/주의/조치 3단계 시각적 설명 후, 긍정 고객에게만 조심스럽게 리뷰 요청</p>
-                </div>
-            </div>
-        </div>
-    </div>`;
-}
-function d_bs(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">🔍 하절기 B/S 안심점검 도표</h3>
-        <div class="overflow-x-auto border border-stone-200 rounded-lg shadow-sm">
-            <table class="min-w-full divide-y divide-stone-200 text-sm text-left">
-                <thead class="bg-stone-50 text-stone-600">
-                    <tr><th class="px-3 py-2 font-semibold">점검 구역</th><th class="px-3 py-2 font-semibold">고객 제시 증거</th><th class="px-3 py-2 font-semibold">판정 예시</th></tr>
-                </thead>
-                <tbody class="divide-y divide-stone-200 bg-white">
-                    <tr>
-                        <td class="px-3 py-2 font-semibold">보일러 본체</td><td class="px-3 py-2 text-stone-600">제조년월 라벨 사진</td>
-                        <td class="px-3 py-2"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold">교체검토</span> (7년↑)</td>
-                    </tr>
-                    <tr>
-                        <td class="px-3 py-2 font-semibold">온수 / 난방</td><td class="px-3 py-2 text-stone-600">타이머 도달 시간, 열화상</td>
-                        <td class="px-3 py-2"><span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs font-bold">주의</span> (${p_safe(d.issues,'온수 지연')} 등)</td>
-                    </tr>
-                    <tr>
-                        <td class="px-3 py-2 font-semibold">배기통 / 수질</td><td class="px-3 py-2 text-stone-600">이음새 사진, 채수 컵 비교</td>
-                        <td class="px-3 py-2"><span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-bold">정상</span> (문제 없음)</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>`;
-}
-function d_upsell(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">🎁 업세일링 3대 패키지 카드</h3>
-        <div class="grid grid-cols-1 gap-3">
-            <div class="border-2 border-sky-400 bg-sky-50 rounded-xl p-4 shadow-sm relative">
-                <div class="absolute -top-3 right-4 bg-sky-500 text-white text-xs font-bold px-2 py-1 rounded shadow">BEST 추천</div>
-                <h4 class="font-bold text-sky-900 text-base mb-1">🛡️ 안심 케어 세트</h4>
-                <p class="text-xs text-sky-700 mb-2 font-semibold">타겟: 7년 이상, 고령자 가정</p>
-                <p class="text-sm text-stone-700 mb-2">보일러 교체 + 배기/누수 정밀 점검 + 겨울철 우선 AS 보장</p>
-                <p class="text-xs text-stone-500 italic">"고장 후 대응보다 예방이 중요합니다."</p>
-            </div>
-            <div class="border border-stone-200 bg-white rounded-xl p-4 shadow-sm">
-                <h4 class="font-bold text-stone-800 text-base mb-1">📱 스마트 라이프 세트</h4>
-                <p class="text-xs text-stone-500 mb-2 font-semibold">타겟: 맞벌이, 임대인</p>
-                <p class="text-sm text-stone-700">보일러 교체 + 스마트 온도조절기 + 앱 연동 서비스</p>
-            </div>
-            <div class="border border-stone-200 bg-white rounded-xl p-4 shadow-sm">
-                <h4 class="font-bold text-stone-800 text-base mb-1">💧 온수 특화 세트</h4>
-                <p class="text-xs text-stone-500 mb-2 font-semibold">타겟: ${p_safe(d.issues,'온수 지연, 수압 불만')}</p>
-                <p class="text-sm text-stone-700">보일러 교체 + 온수 출수/수질 점검 + 프리미엄 필터</p>
-            </div>
-        </div>
-    </div>`;
-}
-function d_marketing(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">📅 4주 마케팅 실행 캘린더</h3>
-        <div class="relative border-l-2 border-sky-200 ml-3 space-y-4 pb-4">
-            <div class="relative pl-6">
-                <div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-sky-500"></div>
-                <h4 class="font-bold text-sm text-stone-800">1주차: 타겟 DB 추출 & 알림톡</h4>
-                <p class="text-xs text-stone-600 mt-1">${p_safe(d.region,'담당 지역')} 고객 대상 무상점검 알림톡 발송 (목표: 100건)</p>
-            </div>
-            <div class="relative pl-6">
-                <div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-sky-400"></div>
-                <h4 class="font-bold text-sm text-stone-800">2주차: 방문 점검 & 리뷰 유도</h4>
-                <p class="text-xs text-stone-600 mt-1">현장 방문 시 QR 리뷰카드 배포 및 리포트 제공</p>
-            </div>
-            <div class="relative pl-6">
-                <div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-sky-300"></div>
-                <h4 class="font-bold text-sm text-stone-800">3주차: 지역 커뮤니티 바이럴</h4>
-                <p class="text-xs text-stone-600 mt-1">맘카페/당근마켓에 "${p_safe(d.issues,'온수 지연')} 체크법" 정보글 작성</p>
-            </div>
-            <div class="relative pl-6">
-                <div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-orange-400"></div>
-                <h4 class="font-bold text-sm text-stone-800">4주차: 성수기 예약 락인 (Lock-in)</h4>
-                <p class="text-xs text-stone-600 mt-1">보류 고객 대상 재콜 진행, 9~11월 우선예약 확정</p>
-            </div>
-        </div>
-    </div>`;
-}
-function d_reservation(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">🗓️ 성수기 예약 대장 샘플</h3>
-        <div class="overflow-x-auto border border-stone-200 rounded-lg shadow-sm">
-            <table class="min-w-full divide-y divide-stone-200 text-xs text-left whitespace-nowrap">
-                <thead class="bg-stone-100 text-stone-600">
-                    <tr><th class="px-2 py-2">고객명/단지</th><th class="px-2 py-2">현재 상태</th><th class="px-2 py-2">관심 패키지</th><th class="px-2 py-2">다음 컨택일</th></tr>
-                </thead>
-                <tbody class="divide-y divide-stone-200 bg-white">
-                    <tr><td class="px-2 py-2 font-semibold">김*동 (${p_safe(d.region,'고덕동')} 래미안)</td><td class="px-2 py-2"><span class="bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">점검완료/보류</span></td><td class="px-2 py-2">온수 특화</td><td class="px-2 py-2 text-red-600 font-bold">06-10 (재콜)</td></tr>
-                    <tr><td class="px-2 py-2 font-semibold">이*수 (${p_safe(d.housing,'구축 빌라')})</td><td class="px-2 py-2"><span class="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">예약확정</span></td><td class="px-2 py-2">안심 케어</td><td class="px-2 py-2 text-stone-500">09-01 (설치)</td></tr>
-                    <tr><td class="px-2 py-2 font-semibold">박*민 (상가)</td><td class="px-2 py-2"><span class="bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded font-bold">견적발송</span></td><td class="px-2 py-2">기본형</td><td class="px-2 py-2 text-stone-800">06-15 (확인)</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>`;
-}
-function d_integrated(d){
-    return `
-    <div class="space-y-4">
-        <h3 class="text-lg font-bold text-stone-800 border-b pb-2">🎯 7대 실전 도구 통합 서머리</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <div class="bg-white border border-stone-200 p-3 rounded-lg shadow-sm flex items-start gap-3">
-                <div class="text-2xl mt-1">📊</div>
-                <div><p class="font-bold text-stone-800">DB 분류 & 알림톡</p><p class="text-xs text-stone-500">${p_safe(d.region,'지역')} 7년 이상 고객 A등급 타겟팅 및 예약 유도 발송</p></div>
-            </div>
-            <div class="bg-white border border-stone-200 p-3 rounded-lg shadow-sm flex items-start gap-3">
-                <div class="text-2xl mt-1">✨</div>
-                <div><p class="font-bold text-stone-800">클린 CS & 안심점검</p><p class="text-xs text-stone-500">덧신 착용 필수, ${p_safe(d.issues,'온수/난방 문제')} 증거 기반 리포트 교부</p></div>
-            </div>
-            <div class="bg-white border border-stone-200 p-3 rounded-lg shadow-sm flex items-start gap-3">
-                <div class="text-2xl mt-1">🎁</div>
-                <div><p class="font-bold text-stone-800">업세일링 패키지</p><p class="text-xs text-stone-500">단순 가격 비교 방어. 고객 맞춤 3대 세트 역제안</p></div>
-            </div>
-            <div class="bg-white border border-stone-200 p-3 rounded-lg shadow-sm flex items-start gap-3">
-                <div class="text-2xl mt-1">📅</div>
-                <div><p class="font-bold text-stone-800">마케팅 & 예약 락인</p><p class="text-xs text-stone-500">리뷰 획득 후 9~12월 성수기 대장에 우선 등록 확정</p></div>
-            </div>
-        </div>
-    </div>`;
+function _escHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function p_generateDemo(){
-    const d = p_getData();
-    const id = PROMPTS[p_current].id;
-    const map = {common:d_common, db:d_db, call:d_call, cs:d_cs, bs:d_bs, upsell:d_upsell, marketing:d_marketing, reservation:d_reservation, integrated:d_integrated};
-    document.getElementById('p-outputText').innerHTML = (map[id] || d_common)(d);
+function p_renderDemo(prompt){
+    const out = document.getElementById('p-outputText');
+    if (!out) return;
+    const data = p_getDataFor(prompt);
+    const dealerLine = data.dealer ? `<span class="font-bold text-sky-700">${_escHtml(data.dealer)}</span>` : '<span class="italic text-stone-400">대리점명 미입력</span>';
+    const regionLine = data.region ? _escHtml(data.region) : '<span class="italic text-stone-400">지역 미입력</span>';
+    const isFortune = prompt.id === 'fortune';
+    const headerBg = isFortune ? 'bg-purple-50 border-purple-200' : 'bg-sky-50 border-sky-200';
+    const headerText = isFortune ? 'text-purple-800' : 'text-sky-800';
+    const sectionsHtml = (prompt.outputSections || []).map(s => `<li class="text-sm text-stone-700">${_escHtml(s)}</li>`).join('');
+    const filledFields = (prompt.fields || []).filter(f => (data[f.id] || '').length > 0);
+    const filledHtml = filledFields.length === 0
+        ? '<p class="text-xs italic text-stone-400">아직 전용 입력이 비어 있습니다. 좌측 양식에 입력하거나 "예시 채우기"를 눌러보세요.</p>'
+        : filledFields.map(f => `<div class="flex items-start gap-2 text-xs"><span class="font-bold text-amber-700 min-w-[80px]">${_escHtml(f.label)}</span><span class="text-stone-700 break-words">${_escHtml((data[f.id] || '').slice(0, 80))}${data[f.id] && data[f.id].length > 80 ? '…' : ''}</span></div>`).join('');
+
+    out.innerHTML = `
+        <div class="space-y-4">
+            <div class="border ${headerBg} p-4 rounded-lg">
+                <div class="text-[10px] font-bold ${headerText} uppercase tracking-wide mb-1">${isFortune ? '🔮 이스터에그' : '📋 예상 산출물 구조'}</div>
+                <h4 class="font-bold text-stone-800 mb-2">${_escHtml(prompt.title)}</h4>
+                <p class="text-xs text-stone-600 leading-relaxed">${_escHtml(prompt.summary)}</p>
+            </div>
+
+            <div class="bg-white border border-stone-200 p-3 rounded-lg">
+                <div class="text-[10px] font-bold text-stone-500 uppercase tracking-wide mb-2">현재 입력 미리보기</div>
+                <div class="text-xs text-stone-700 mb-2">대리점: ${dealerLine} <span class="text-stone-400">·</span> 지역: ${regionLine}</div>
+                <div class="space-y-1 border-t border-stone-100 pt-2">${filledHtml}</div>
+            </div>
+
+            <div class="bg-white border border-stone-200 p-3 rounded-lg">
+                <div class="text-[10px] font-bold text-stone-500 uppercase tracking-wide mb-2">예상 출력 구성 (한국어)</div>
+                <ul class="list-disc pl-5 space-y-1">${sectionsHtml}</ul>
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg text-xs text-amber-900 leading-relaxed">
+                💡 우측 카드의 영문 프롬프트를 <span class="font-bold">"현재 복사"</span> 버튼으로 복사 → ChatGPT / Claude / Gemini에 붙여넣으면 한국어로 풍부한 결과가 출력됩니다.
+            </div>
+        </div>
+    `;
 }
 
 // ============================================================
