@@ -39,7 +39,6 @@ datas = [
 ]
 
 hiddenimports = [
-    "plyer.platforms.win.notification",
     "pystray._win32",
     "PIL._tkinter_finder",
     "uvicorn.logging",

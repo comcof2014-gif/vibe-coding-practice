@@ -6,7 +6,6 @@ jinja2>=3.1.0
 pywebview>=5.0
 pystray>=0.19.5
 Pillow>=10.0.0
-plyer>=2.1.0
 
 # Windows-only WebView2/.NET bridge for pywebview
 pythonnet>=3.0.3; sys_platform == "win32"
