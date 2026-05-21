@@ -10,4 +10,4 @@ py -m PyInstaller `
 
 Write-Host ""
 Write-Host "Build complete: dist\dealer-dashboard.exe"
-Write-Host "The ONNX model is not bundled into the EXE. It is downloaded on first run to AppData\dealer-dashboard-ai."
+Write-Host "The SmolLM2 GGUF model is not bundled into the EXE. It is downloaded on first run to AppData\dealer-dashboard-ai."
