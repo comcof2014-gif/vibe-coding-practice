@@ -36,16 +36,32 @@ def get_config_dir() -> Path:
     override = os.environ.get("DEALER_DASHBOARD_CONFIG_DIR")
     if override:
         base = Path(override)
-    elif os.name == "nt" and os.environ.get("APPDATA"):
-        base = Path(os.environ["APPDATA"]) / "dealer-dashboard"
+    elif getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent / "dealer-dashboard-data"
     else:
-        base = Path.home() / ".config" / "dealer-dashboard"
+        base = Path(__file__).resolve().parent / "dealer-dashboard-data"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
 
 CONFIG_PATH = get_config_dir() / "config.json"
 _config_lock = threading.Lock()
+
+
+def get_legacy_config_path() -> Path | None:
+    if os.name == "nt" and os.environ.get("APPDATA"):
+        return Path(os.environ["APPDATA"]) / "dealer-dashboard" / "config.json"
+    return Path.home() / ".config" / "dealer-dashboard" / "config.json"
+
+
+def migrate_legacy_config() -> None:
+    legacy = get_legacy_config_path()
+    if not legacy or not legacy.exists() or CONFIG_PATH.exists():
+        return
+    try:
+        CONFIG_PATH.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError:
+        pass
 
 PRESET_COLORS = [
     "#0369a1",
@@ -73,16 +89,42 @@ TRUSTED_SCHEDULE_DOMAINS = [
     "korea.kr",
     "mois.go.kr",
     "mcst.go.kr",
+    "data.go.kr",
     "visitkorea.or.kr",
     "korean.visitkorea.or.kr",
+    "kto.visitkorea.or.kr",
+    "ggtour.or.kr",
+    "visitseoul.net",
+    "visitbusan.net",
     "date.nager.at",
     "timeanddate.com",
 ]
 HOLIDAY_KEYWORDS = ("공휴일", "대체공휴일", "대체휴무", "휴일", "국가공휴일", "빨간날")
+REGION_SEARCH_HINTS = {
+    "평택": ["site:pyeongtaek.go.kr", "site:gg.go.kr", "site:ggtour.or.kr"],
+    "서울": ["site:seoul.go.kr", "site:visitseoul.net"],
+    "부산": ["site:busan.go.kr", "site:visitbusan.net"],
+    "인천": ["site:incheon.go.kr"],
+    "대구": ["site:daegu.go.kr"],
+    "대전": ["site:daejeon.go.kr"],
+    "광주": ["site:gwangju.go.kr"],
+    "울산": ["site:ulsan.go.kr"],
+    "세종": ["site:sejong.go.kr"],
+    "경기": ["site:gg.go.kr", "site:ggtour.or.kr"],
+    "강원": ["site:gw.go.kr"],
+    "충북": ["site:chungbuk.go.kr"],
+    "충남": ["site:chungnam.go.kr"],
+    "전북": ["site:jeonbuk.go.kr"],
+    "전남": ["site:jeonnam.go.kr"],
+    "경북": ["site:gb.go.kr"],
+    "경남": ["site:gyeongnam.go.kr"],
+    "제주": ["site:jeju.go.kr"],
+}
 
 
 def load_config() -> dict:
     with _config_lock:
+        migrate_legacy_config()
         if not CONFIG_PATH.exists():
             CONFIG_PATH.write_text(json.dumps(DEFAULT_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
             return json.loads(json.dumps(DEFAULT_CONFIG))
@@ -223,6 +265,17 @@ def clip_calendar_title(query: str, index: int) -> str:
     return (title[: max(1, TITLE_MAX_LEN - len(suffix))] + suffix)[:TITLE_MAX_LEN]
 
 
+def clip_source_title(query: str, source_title: str, index: int) -> str:
+    base = clean_search_text(source_title) or query
+    base = re.sub(r"[\[\]【】()（）|:：·ㆍ_-]+", " ", base)
+    words = [
+        w for w in re.sub(r"[^0-9A-Za-z가-힣 ]+", " ", base).split()
+        if w not in {"공지", "안내", "행사", "일정", "축제", "새소식", "보도자료"}
+    ]
+    title = "".join(words[:2]) or clip_calendar_title(query, index)
+    return title[:TITLE_MAX_LEN]
+
+
 def last_day_of_month(year: int, month: int) -> int:
     if month == 12:
         return 31
@@ -256,8 +309,17 @@ def unwrap_search_url(href: str) -> str:
     return href
 
 
-def trusted_site_query() -> str:
-    return " OR ".join(f"site:{domain}" for domain in TRUSTED_SCHEDULE_DOMAINS[:6])
+def trusted_site_query(region: str = "") -> str:
+    hints: list[str] = []
+    for key, domains in REGION_SEARCH_HINTS.items():
+        if key and key in region:
+            hints.extend(domains)
+    base = [f"site:{domain}" for domain in TRUSTED_SCHEDULE_DOMAINS[:7]]
+    merged = []
+    for item in hints + base:
+        if item not in merged:
+            merged.append(item)
+    return " OR ".join(merged[:10])
 
 
 def calendar_internet_available() -> bool:
@@ -300,9 +362,31 @@ def fetch_korean_public_holidays(year: int) -> tuple[list[dict], str | None]:
     return holidays, None
 
 
-def fetch_schedule_search_results(query: str, max_results: int) -> tuple[list[dict], str | None]:
+def fetch_trusted_page_text(url: str) -> str:
+    if not is_trusted_domain(url):
+        return ""
     try:
-        search_text = f"{query} ({trusted_site_query()})"
+        res = requests.get(
+            url,
+            timeout=6,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) dealer-dashboard/1.0",
+                "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.6",
+            },
+        )
+        res.raise_for_status()
+    except requests.RequestException:
+        return ""
+    content_type = res.headers.get("content-type", "")
+    if "html" not in content_type and "text" not in content_type:
+        return ""
+    return clean_search_text(res.text)[:5000]
+
+
+def fetch_schedule_search_results(query: str, region: str, max_results: int) -> tuple[list[dict], str | None]:
+    try:
+        month_terms = "일정 행사 축제 박람회 공지 접수 기간 날짜"
+        search_text = f"{region} {query} {month_terms} ({trusted_site_query(region)})"
         url = "https://duckduckgo.com/html/?" + urlencode({"q": search_text})
         res = requests.get(
             url,
@@ -325,18 +409,20 @@ def fetch_schedule_search_results(query: str, max_results: int) -> tuple[list[di
         title = clean_search_text(title_match.group(1) if title_match else "")
         snippet = clean_search_text(snippet_match.group(1) if snippet_match else "")
         href = unwrap_search_url(href_match.group(1) if href_match else "")
-        if (title or snippet) and is_trusted_domain(href):
-            results.append({"title": title[:160], "snippet": snippet[:260], "url": href[:500]})
+        if (title or snippet) and is_trusted_domain(href) and not any(item["url"] == href for item in results):
+            page_text = fetch_trusted_page_text(href) if len(results) < max_results else ""
+            results.append({
+                "title": title[:160],
+                "snippet": snippet[:360],
+                "url": href[:500],
+                "page_text": page_text,
+            })
         if len(results) >= max_results:
             break
     return results, None
 
 
-def extract_dates_from_search(payload: CalendarAiSearchRequest, results: list[dict]) -> list[str]:
-    text = "\n".join(
-        [payload.query, payload.region]
-        + [f"{item.get('title', '')} {item.get('snippet', '')}" for item in results]
-    )
+def extract_dates_from_text(payload: CalendarAiSearchRequest, text: str) -> list[str]:
     dates: list[str] = []
     seen = set()
 
@@ -357,32 +443,34 @@ def extract_dates_from_search(payload: CalendarAiSearchRequest, results: list[di
         m_i, d_i = int(m), int(d)
         if m_i == payload.month:
             add_date(valid_month_date(payload.year, m_i, d_i))
-
-    if dates:
-        return dates[: payload.max_results]
-
-    last_day = last_day_of_month(payload.year, payload.month)
-    today = date.today()
-    start_day = today.day if today.year == payload.year and today.month == payload.month else 1
-    fallback_days = [start_day, min(last_day, start_day + 7), min(last_day, start_day + 14), min(last_day, start_day + 21)]
-    for day in fallback_days:
-        add_date(valid_month_date(payload.year, payload.month, max(1, day)))
     return dates[: payload.max_results]
 
 
 def build_calendar_ai_entries(payload: CalendarAiSearchRequest, results: list[dict]) -> list[dict]:
-    dates = extract_dates_from_search(payload, results)
     entries = []
-    for index, entry_date in enumerate(dates, start=1):
-        entries.append(
-            {
+    seen_dates: set[tuple[str, str]] = set()
+    for result in results:
+        source_text = " ".join([
+            result.get("title", ""),
+            result.get("snippet", ""),
+            result.get("page_text", ""),
+        ])
+        for entry_date in extract_dates_from_text(payload, source_text):
+            key = (entry_date, result.get("url", ""))
+            if key in seen_dates:
+                continue
+            seen_dates.add(key)
+            index = len(entries) + 1
+            entries.append({
                 "id": uuid4().hex[:12],
                 "date": entry_date,
-                "title": clip_calendar_title(payload.query, index),
+                "title": clip_source_title(payload.query, result.get("title", ""), index),
                 "color": PRESET_COLORS[(index - 1) % len(PRESET_COLORS)],
-                "source": "ai-search",
-            }
-        )
+                "source": "trusted-search",
+                "source_url": result.get("url", ""),
+            })
+            if len(entries) >= payload.max_results:
+                return entries
     return entries
 
 
@@ -475,6 +563,33 @@ class AIPromptImproveRequest(BaseModel):
     @field_validator("inputs")
     @classmethod
     def _validate_prompt_inputs(cls, v: dict) -> dict:
+        cleaned = {}
+        for key, value in (v or {}).items():
+            key = str(key).strip()[:80]
+            value = str(value).strip()[:1000]
+            if key and value:
+                cleaned[key] = value
+        return cleaned
+
+
+class AIPromptRunRequest(BaseModel):
+    prompt_id: str = Field(default="", max_length=80)
+    title: str = Field(default="", max_length=200)
+    prompt_text: str = Field(min_length=1, max_length=12000)
+    inputs: dict = Field(default_factory=dict)
+    extra_request: str = Field(default="", max_length=1200)
+
+    @field_validator("prompt_text")
+    @classmethod
+    def _validate_prompt_text(cls, v: str) -> str:
+        v = str(v or "").strip()
+        if not v:
+            raise ValueError("prompt_text is required")
+        return v
+
+    @field_validator("inputs")
+    @classmethod
+    def _validate_run_inputs(cls, v: dict) -> dict:
         cleaned = {}
         for key, value in (v or {}).items():
             key = str(key).strip()[:80]
@@ -632,6 +747,34 @@ async def api_ai_improve_prompt(payload: AIPromptImproveRequest):
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail={"message": str(exc), "status": ai_manager.status()})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail={"message": f"프롬프트 보강 중 오류가 발생했습니다: {exc}", "status": ai_manager.status()})
+
+
+@app.post("/api/ai/run-prompt")
+async def api_ai_run_prompt(payload: AIPromptRunRequest):
+    status = ai_manager.status()
+    if not status.get("ready"):
+        ai_manager.start_async()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "로컬 AI 엔진 준비가 끝난 뒤 결과를 생성할 수 있습니다.",
+                "status": ai_manager.status(),
+            },
+        )
+    try:
+        return ai_manager.run_prompt(
+            prompt_id=payload.prompt_id,
+            title=payload.title,
+            prompt_text=payload.prompt_text,
+            inputs=payload.inputs,
+            extra_request=payload.extra_request,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "status": ai_manager.status()})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail={"message": f"로컬 AI 결과 생성 중 오류가 발생했습니다: {exc}", "status": ai_manager.status()})
 
 
 @app.get("/api/config")
@@ -732,7 +875,7 @@ def api_calendar_ai_search(payload: CalendarAiSearchRequest):
         ] if holidays else []
         search_error = holiday_error
     else:
-        sources, search_error = fetch_schedule_search_results(search_query, payload.max_results)
+        sources, search_error = fetch_schedule_search_results(search_query, payload.region, payload.max_results)
         suggestions = build_calendar_ai_entries(payload, sources)
 
     cfg = load_config()
@@ -759,9 +902,9 @@ def api_calendar_ai_search(payload: CalendarAiSearchRequest):
         "message": (
             "신뢰 가능한 공휴일 데이터에서 선택한 월의 공휴일을 반영했습니다."
             if query_asks_public_holidays(payload.query) and created else
-            "신뢰 사이트 검색 결과를 바탕으로 월간 일정에 반영했습니다."
+            "신뢰 사이트 검색 결과에서 확인한 날짜만 월간 일정에 반영했습니다."
             if created else
-            "신뢰 사이트에서 선택한 월의 날짜 후보를 찾지 못했습니다."
+            "신뢰 사이트에서 선택한 월의 명확한 날짜를 찾지 못해 임의 일정은 등록하지 않았습니다."
         ),
     }
 
