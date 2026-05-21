@@ -18,7 +18,7 @@ from pathlib import Path
 
 import uvicorn
 
-from app import app, load_config
+from app import app, BASE_DIR, load_config
 
 try:
     import webview
@@ -71,7 +71,7 @@ def _wait_for_server(port: int, timeout: float = 10.0) -> bool:
 
 
 def _make_tray_icon_image() -> "Image.Image":
-    icon_path = Path(__file__).resolve().parent / "static" / "tray.png"
+    icon_path = BASE_DIR / "static" / "tray.png"
     if icon_path.exists():
         return Image.open(icon_path)
     img = Image.new("RGBA", (64, 64), (3, 105, 161, 255))

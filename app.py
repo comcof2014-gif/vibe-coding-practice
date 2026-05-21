@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import threading
 import webbrowser
 from pathlib import Path
@@ -13,7 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
-BASE_DIR = Path(__file__).resolve().parent
+
+def get_resource_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
+
+
+BASE_DIR = get_resource_dir()
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
