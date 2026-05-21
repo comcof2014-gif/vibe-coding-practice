@@ -155,6 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('tab-weekly').addEventListener('click', (e) => switchTab('weekly', e.currentTarget));
     document.getElementById('tab-monthly').addEventListener('click', (e) => switchTab('monthly', e.currentTarget));
     document.getElementById('tab-prompt').addEventListener('click', (e) => switchTab('prompt', e.currentTarget));
+    document.getElementById('tab-shortcut').addEventListener('click', (e) => switchTab('shortcut', e.currentTarget));
 
     const monthBtns = document.querySelectorAll('.month-btn');
     monthBtns.forEach(btn => {
@@ -224,9 +225,12 @@ function switchTab(tab, element) {
     document.getElementById('view-weekly').classList.add('hidden');
     document.getElementById('view-monthly').classList.add('hidden');
     document.getElementById('view-prompt').classList.add('hidden');
+    document.getElementById('view-shortcut').classList.add('hidden');
 
     document.getElementById(`view-${tab}`).classList.remove('hidden');
     document.getElementById(`view-${tab}`).classList.add('block');
+
+    if (tab === 'shortcut') loadShortcuts();
 }
 
 // --- CUSTOM MODAL SYSTEM ---
@@ -966,3 +970,264 @@ function p_generateDemo(){
     const map = {common:d_common, db:d_db, call:d_call, cs:d_cs, bs:d_bs, upsell:d_upsell, marketing:d_marketing, reservation:d_reservation, integrated:d_integrated};
     document.getElementById('p-outputText').innerHTML = (map[id] || d_common)(d);
 }
+
+// ============================================================
+// NOTIFICATION SETTINGS (전역 알림 시각)
+// ============================================================
+let notifyTimesCache = [];
+let notifyMessageCache = '';
+
+async function loadNotifySettings() {
+    try {
+        const res = await fetch('/api/config');
+        if (!res.ok) throw new Error('failed');
+        const cfg = await res.json();
+        notifyTimesCache = cfg.notification_times || [];
+        notifyMessageCache = cfg.notification_message || '';
+        renderNotifySummary();
+    } catch (e) {
+        document.getElementById('notify-times-summary').textContent = '알림 설정을 불러오지 못했습니다.';
+    }
+}
+
+function renderNotifySummary() {
+    const el = document.getElementById('notify-times-summary');
+    if (!el) return;
+    if (notifyTimesCache.length === 0) {
+        el.innerHTML = '🔕 설정된 알림 시각이 없습니다. <span class="text-sky-700 font-semibold">오른쪽 버튼으로 추가하세요.</span>';
+    } else {
+        el.innerHTML = '🔔 알림 시각: ' + notifyTimesCache.map(t => `<span class="inline-block bg-sky-50 text-sky-700 border border-sky-200 rounded px-2 py-0.5 font-semibold mr-1">${t}</span>`).join('');
+    }
+}
+
+function openNotifySettingsModal() {
+    const times = [...notifyTimesCache];
+    const renderList = () => times.map((t, i) => `
+        <div class="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded px-3 py-2">
+            <span class="text-sm font-mono font-bold text-stone-800 flex-grow">${t}</span>
+            <button type="button" data-idx="${i}" class="notify-remove-btn text-stone-400 hover:text-red-500 text-sm">❌</button>
+        </div>
+    `).join('') || '<div class="text-xs text-stone-500">등록된 시각이 없습니다.</div>';
+
+    const html = `
+        <h3 class="text-lg font-bold text-stone-800 mb-1">⏰ 일일 알림 시각 설정</h3>
+        <p class="text-xs text-stone-500 mb-4">설정한 시각에 Windows 알림으로 일일 체크리스트 확인을 알려드립니다.</p>
+        <div class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar mb-4" id="notify-list">${renderList()}</div>
+        <div class="flex items-end gap-2 mb-4">
+            <div class="flex-grow">
+                <label class="block text-xs font-bold text-stone-600 mb-1">새 알림 시각 추가</label>
+                <input id="notify-new-time" type="time" class="w-full border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+            </div>
+            <button type="button" id="notify-add-btn" class="px-3 py-2 bg-sky-100 text-sky-700 border border-sky-200 rounded text-sm font-bold hover:bg-sky-200">추가</button>
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-stone-600 mb-1">알림 메시지</label>
+            <input id="notify-msg" maxlength="200" class="w-full border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-sky-500 outline-none" value="${(notifyMessageCache || '').replace(/"/g,'&quot;')}" placeholder="오늘의 체크리스트를 확인하세요.">
+        </div>
+        <div id="notify-err" class="mt-3 text-xs text-red-600 hidden"></div>
+        <div class="flex justify-end gap-2 mt-5">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 bg-stone-100 text-stone-700 rounded text-sm font-semibold hover:bg-stone-200">취소</button>
+            <button type="button" id="notify-save-btn" class="px-4 py-2 bg-sky-600 text-white rounded text-sm font-bold hover:bg-sky-700">저장</button>
+        </div>
+    `;
+    Modal.show(html);
+
+    const refresh = () => {
+        document.getElementById('notify-list').innerHTML = renderList();
+        bindRemove();
+    };
+    const bindRemove = () => {
+        document.querySelectorAll('.notify-remove-btn').forEach(btn => {
+            btn.onclick = () => { times.splice(parseInt(btn.dataset.idx, 10), 1); refresh(); };
+        });
+    };
+    bindRemove();
+
+    document.getElementById('notify-add-btn').onclick = () => {
+        const input = document.getElementById('notify-new-time');
+        const v = input.value;
+        if (!v) return;
+        if (!times.includes(v)) {
+            times.push(v);
+            times.sort();
+            refresh();
+        }
+        input.value = '';
+    };
+
+    document.getElementById('notify-save-btn').onclick = async () => {
+        const err = document.getElementById('notify-err');
+        err.classList.add('hidden');
+        const message = document.getElementById('notify-msg').value.trim();
+        try {
+            const res = await fetch('/api/config/notifications', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ notification_times: times, notification_message: message })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail ? JSON.stringify(data.detail) : '저장 실패');
+            }
+            const cfg = await res.json();
+            notifyTimesCache = cfg.notification_times || [];
+            notifyMessageCache = cfg.notification_message || '';
+            renderNotifySummary();
+            closeModal();
+            showToast('알림 설정이 저장되었습니다.');
+        } catch (e) {
+            err.textContent = '저장에 실패했습니다: ' + e.message;
+            err.classList.remove('hidden');
+        }
+    };
+}
+
+// ============================================================
+// SHORTCUTS (사이트 바로가기)
+// ============================================================
+let shortcutsCache = [];
+let shortcutEditingId = null;
+
+async function loadShortcuts() {
+    try {
+        const res = await fetch('/api/shortcuts');
+        shortcutsCache = res.ok ? await res.json() : [];
+    } catch {
+        shortcutsCache = [];
+    }
+    renderShortcuts();
+}
+
+function renderShortcuts() {
+    const grid = document.getElementById('shortcut-grid');
+    const empty = document.getElementById('shortcut-empty');
+    const count = document.getElementById('shortcut-count');
+    if (!grid) return;
+    count.textContent = `${shortcutsCache.length}개`;
+
+    if (shortcutsCache.length === 0) {
+        grid.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+    }
+    empty.classList.add('hidden');
+
+    grid.innerHTML = shortcutsCache.map(s => {
+        const safeName = s.name.replace(/</g, '&lt;');
+        const safeUrl = s.url.replace(/</g, '&lt;');
+        return `
+        <div class="border border-stone-200 rounded-lg bg-white hover:border-sky-400 hover:shadow-md transition-all flex flex-col">
+            <button type="button" data-action="open" data-id="${s.id}" class="text-left p-4 flex-grow">
+                <div class="font-bold text-stone-800 truncate text-base mb-1">🔗 ${safeName}</div>
+                <div class="text-xs text-stone-500 truncate">${safeUrl}</div>
+            </button>
+            <div class="border-t border-stone-100 flex">
+                <button type="button" data-action="edit" data-id="${s.id}" class="flex-1 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition-colors">✏ 수정</button>
+                <button type="button" data-action="delete" data-id="${s.id}" class="flex-1 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors border-l border-stone-100">🗑 삭제</button>
+            </div>
+        </div>`;
+    }).join('');
+
+    grid.querySelectorAll('button[data-action]').forEach(btn => {
+        const id = btn.dataset.id;
+        const action = btn.dataset.action;
+        btn.onclick = () => {
+            if (action === 'open') openShortcut(id);
+            else if (action === 'edit') startEditShortcut(id);
+            else if (action === 'delete') confirmDeleteShortcut(id);
+        };
+    });
+}
+
+async function openShortcut(id) {
+    const item = shortcutsCache.find(s => s.id === id);
+    if (!item) return;
+    try {
+        const res = await fetch('/api/open-url', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ url: item.url })
+        });
+        if (!res.ok) throw new Error('open failed');
+        showToast(`🌐 ${item.name} 열기`);
+    } catch {
+        window.open(item.url, '_blank', 'noopener');
+    }
+}
+
+function startEditShortcut(id) {
+    const item = shortcutsCache.find(s => s.id === id);
+    if (!item) return;
+    shortcutEditingId = id;
+    document.getElementById('shortcut-name').value = item.name;
+    document.getElementById('shortcut-url').value = item.url;
+    document.getElementById('shortcut-submit').textContent = '수정 저장';
+    document.getElementById('shortcut-name').focus();
+}
+
+function resetShortcutForm() {
+    shortcutEditingId = null;
+    document.getElementById('shortcut-form').reset();
+    document.getElementById('shortcut-submit').textContent = '추가';
+    const err = document.getElementById('shortcut-form-error');
+    err.classList.add('hidden');
+    err.textContent = '';
+}
+
+function confirmDeleteShortcut(id) {
+    const item = shortcutsCache.find(s => s.id === id);
+    if (!item) return;
+    const html = `
+        <h3 class="text-lg font-bold text-red-600 mb-2">바로가기 삭제</h3>
+        <p class="text-sm text-stone-600 mb-2"><span class="font-bold">${item.name.replace(/</g,'&lt;')}</span> 바로가기를 삭제하시겠습니까?</p>
+        <p class="text-xs text-stone-500 mb-6 truncate">${item.url.replace(/</g,'&lt;')}</p>
+        <div class="flex justify-end gap-2">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 bg-stone-100 text-stone-700 rounded text-sm font-semibold hover:bg-stone-200">취소</button>
+            <button type="button" id="shortcut-delete-confirm" class="px-4 py-2 bg-red-600 text-white rounded text-sm font-bold hover:bg-red-700">삭제</button>
+        </div>`;
+    Modal.show(html);
+    document.getElementById('shortcut-delete-confirm').onclick = async () => {
+        await fetch(`/api/shortcuts/${id}`, { method: 'DELETE' });
+        closeModal();
+        if (shortcutEditingId === id) resetShortcutForm();
+        await loadShortcuts();
+        showToast('삭제되었습니다.');
+    };
+}
+
+async function submitShortcutForm(e) {
+    e.preventDefault();
+    const name = document.getElementById('shortcut-name').value.trim();
+    const url = document.getElementById('shortcut-url').value.trim();
+    const err = document.getElementById('shortcut-form-error');
+    err.classList.add('hidden');
+
+    try {
+        const opts = {
+            method: shortcutEditingId ? 'PUT' : 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, url })
+        };
+        const endpoint = shortcutEditingId ? `/api/shortcuts/${shortcutEditingId}` : '/api/shortcuts';
+        const res = await fetch(endpoint, opts);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const msg = Array.isArray(data.detail) ? data.detail.map(d => d.msg).join(', ') : (data.detail || '저장 실패');
+            throw new Error(msg);
+        }
+        resetShortcutForm();
+        await loadShortcuts();
+        showToast('저장되었습니다.');
+    } catch (ex) {
+        err.textContent = ex.message;
+        err.classList.remove('hidden');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const settingsBtn = document.getElementById('notify-settings-btn');
+    if (settingsBtn) settingsBtn.addEventListener('click', openNotifySettingsModal);
+    const form = document.getElementById('shortcut-form');
+    if (form) form.addEventListener('submit', submitShortcutForm);
+    loadNotifySettings();
+});

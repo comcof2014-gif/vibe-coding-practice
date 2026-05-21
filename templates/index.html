@@ -96,13 +96,22 @@
             <button id="tab-prompt" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg flex items-center">
                 <span class="mr-2">&#129302;</span> AI 프롬프트 스튜디오 <span class="ml-2 text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-bold">NEW</span>
             </button>
+            <button id="tab-shortcut" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg flex items-center">
+                <span class="mr-2">&#128279;</span> 바로가기
+            </button>
         </nav>
 
         <!-- VIEW 1: DAILY -->
         <main id="view-daily" class="space-y-6 block">
             <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200 mb-6">
-                <h2 class="text-xl font-bold text-stone-800 mb-2">오늘의 현장 통제</h2>
-                <p class="text-stone-600 text-sm">시간대별 영업 준비부터 최종 마감까지의 루틴입니다. 각 항목을 완료할 때마다 체크하여 오늘의 달성률을 100%로 만드십시오.</p>
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-2">오늘의 현장 통제</h2>
+                        <p class="text-stone-600 text-sm">시간대별 영업 준비부터 최종 마감까지의 루틴입니다. 각 항목을 완료할 때마다 체크하여 오늘의 달성률을 100%로 만드십시오.</p>
+                    </div>
+                    <button id="notify-settings-btn" class="shrink-0 px-4 py-2 bg-sky-50 text-sky-700 border border-sky-200 rounded-md text-sm font-bold hover:bg-sky-100 transition-colors">⏰ 알림 시각 설정</button>
+                </div>
+                <div class="mt-3 text-xs text-stone-500" id="notify-times-summary">알림 시각을 불러오는 중…</div>
             </section>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -345,6 +354,50 @@
                 </section>
 
             </div>
+        </main>
+
+        <!-- VIEW 5: SHORTCUTS -->
+        <main id="view-shortcut" class="space-y-6 hidden">
+            <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-2">사이트 바로가기</h2>
+                        <p class="text-stone-600 text-sm">자주 쓰는 업무 사이트의 이름과 주소를 등록하면 한 번의 클릭으로 기본 브라우저에서 즉시 열립니다.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white rounded-xl shadow-sm border border-stone-200">
+                <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl">
+                    <h3 class="font-bold text-stone-700">새 바로가기 추가</h3>
+                </div>
+                <form id="shortcut-form" class="p-4 grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-bold text-stone-600 mb-1">버튼 이름</label>
+                        <input id="shortcut-name" maxlength="60" class="w-full border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="예: 본사 ERP" required>
+                    </div>
+                    <div class="md:col-span-7">
+                        <label class="block text-xs font-bold text-stone-600 mb-1">사이트 URL (https:// 포함)</label>
+                        <input id="shortcut-url" type="url" class="w-full border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="https://example.com" required>
+                    </div>
+                    <div class="md:col-span-2">
+                        <button type="submit" id="shortcut-submit" class="w-full py-2 bg-sky-600 text-white rounded-md text-sm font-bold hover:bg-sky-700 transition-colors">추가</button>
+                    </div>
+                </form>
+                <div id="shortcut-form-error" class="px-4 pb-3 text-xs text-red-600 hidden"></div>
+            </section>
+
+            <section class="bg-white rounded-xl shadow-sm border border-stone-200">
+                <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex justify-between items-center">
+                    <h3 class="font-bold text-stone-700">등록된 바로가기</h3>
+                    <span id="shortcut-count" class="text-xs font-semibold text-stone-500">0개</span>
+                </div>
+                <div id="shortcut-grid" class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 min-h-[200px]">
+                </div>
+                <div id="shortcut-empty" class="p-8 text-center text-sm text-stone-500 hidden">
+                    아직 등록된 바로가기가 없습니다. 위 폼에서 추가하세요.
+                </div>
+            </section>
         </main>
 
     </div>
