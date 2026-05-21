@@ -1,8 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
-
-
 block_cipher = None
 
 hiddenimports = [
@@ -11,10 +8,6 @@ hiddenimports = [
     "desktop",
     "fastapi",
     "jinja2",
-    "llama_cpp",
-    "llama_cpp._ctypes_extensions",
-    "llama_cpp.llama_cpp",
-    "llama_cpp.llama_chat_format",
     "PIL",
     "PIL.Image",
     "PIL.ImageDraw",
@@ -26,17 +19,13 @@ hiddenimports = [
     "uvicorn.lifespan.on",
     "webview",
 ]
-hiddenimports += collect_submodules("llama_cpp")
 
 datas = [
     ("templates", "templates"),
     ("static", "static"),
 ]
-datas += collect_data_files("llama_cpp")
 
 binaries = []
-for src, _dest in collect_dynamic_libs("llama_cpp"):
-    binaries.append((src, "llama_cpp/lib"))
 
 a = Analysis(
     ["desktop.py"],
