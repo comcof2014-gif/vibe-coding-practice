@@ -6,7 +6,7 @@ import threading
 import webbrowser
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -15,6 +15,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
+
+from ai_engine import PROMPT_TEMPLATE_EXAMPLES, ai_manager
 
 
 def get_resource_dir() -> Path:
@@ -186,10 +188,23 @@ class OpenUrlRequest(BaseModel):
         return v.strip()
 
 
+class AIMatchRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=5000)
+    top_k: int = Field(default=3, ge=1, le=8)
+
+    @field_validator("text")
+    @classmethod
+    def _validate_text(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("text is required")
+        return v
+
+
 app = FastAPI(
     title="대리점장 통합 관리 대시보드",
     description="영업 통제부터 AI 활용 실무 스크립트 제작까지",
-    version="1.1.0",
+    version="1.2.0",
 )
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -198,7 +213,12 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    template = templates.env.get_template("index.html")
+    html = template.render(request=request)
+    local_ai_script = '<script src="/static/local_ai.js"></script>'
+    if local_ai_script not in html:
+        html = html.replace("</body>", f"    {local_ai_script}\n</body>")
+    return HTMLResponse(html)
 
 
 @app.get("/health")
@@ -208,13 +228,65 @@ async def health():
 
 @app.post("/api/generate")
 async def generate(payload: dict):
+    text = ""
+    if isinstance(payload, dict):
+        text = str(payload.get("text") or payload.get("prompt") or "").strip()
+    if text:
+        if not ai_manager.status().get("ready"):
+            ai_manager.start_async()
+            return JSONResponse(
+                {
+                    "status": "initializing",
+                    "message": "로컬 AI 엔진을 준비하는 중입니다.",
+                    "ai": ai_manager.status(),
+                },
+                status_code=202,
+            )
+        return JSONResponse({"status": "local-ai", "match": ai_manager.match(text)})
+
     return JSONResponse(
         {
             "status": "demo",
-            "message": "정적 데모 모드입니다. AI API 연동은 추후 확장 예정입니다.",
+            "message": "정적 데모 모드입니다. 로컬 AI 추천은 /api/ai/match 엔드포인트를 사용합니다.",
             "received": payload,
         }
     )
+
+
+@app.get("/api/ai/status")
+async def api_ai_status():
+    status = ai_manager.status()
+    if status.get("state") == "idle":
+        ai_manager.start_async()
+        status = ai_manager.status()
+    return status
+
+
+@app.post("/api/ai/start")
+async def api_ai_start():
+    return ai_manager.start_async()
+
+
+@app.get("/api/ai/templates")
+async def api_ai_templates():
+    return [{"id": item["id"], "title": item["title"]} for item in PROMPT_TEMPLATE_EXAMPLES]
+
+
+@app.post("/api/ai/match")
+async def api_ai_match(payload: AIMatchRequest):
+    if not ai_manager.status().get("ready"):
+        ai_manager.start_async()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "로컬 AI 엔진을 준비하는 중입니다.",
+                "status": ai_manager.status(),
+            },
+        )
+    try:
+        return ai_manager.match(payload.text, top_k=payload.top_k)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "status": ai_manager.status()})
 
 
 @app.get("/api/config")
