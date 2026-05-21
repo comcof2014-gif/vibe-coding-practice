@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 
 block_cipher = None
@@ -11,36 +11,34 @@ hiddenimports = [
     "desktop",
     "fastapi",
     "jinja2",
-    "numpy",
-    "onnxruntime",
-    "onnxruntime.capi",
-    "onnxruntime.capi.onnxruntime_pybind11_state",
+    "llama_cpp",
+    "llama_cpp.llama_cpp",
     "PIL",
     "PIL.Image",
     "PIL.ImageDraw",
     "pystray",
     "requests",
-    "tokenizers",
     "uvicorn",
     "uvicorn.protocols.http.auto",
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan.on",
     "webview",
 ]
-hiddenimports += collect_submodules("onnxruntime")
-hiddenimports += collect_submodules("tokenizers")
+hiddenimports += collect_submodules("llama_cpp")
 
 datas = [
     ("templates", "templates"),
     ("static", "static"),
 ]
-datas += collect_data_files("onnxruntime")
-datas += collect_data_files("tokenizers")
+datas += collect_data_files("llama_cpp")
+
+binaries = []
+binaries += collect_dynamic_libs("llama_cpp")
 
 a = Analysis(
     ["desktop.py"],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
