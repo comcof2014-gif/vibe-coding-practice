@@ -2,6 +2,9 @@ name: Build dealer-dashboard EXE
 
 run-name: "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pr_number != '' && format('Merge PR #{0}: dealer-dashboard EXE', github.event.inputs.pr_number) || github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && format('Merge PR #{0}: dealer-dashboard EXE', github.event.pull_request.number) || github.event_name == 'pull_request' && format('PR #{0}: dealer-dashboard EXE', github.event.pull_request.number) || github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Merge PR #') && format('{0}: dealer-dashboard EXE', github.event.head_commit.message) || format('dealer-dashboard EXE: {0}', github.ref_name) }}"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_dispatch:
     inputs:
@@ -47,7 +50,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install build dependencies
         run: |
