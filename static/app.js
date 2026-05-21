@@ -108,16 +108,358 @@ let monthlyData = {
 };
 
 // --- 2. PROMPT STUDIO DATA ---
+const PROMPT_LANG_HEADER = `[CRITICAL OUTPUT LANGUAGE]
+- Write the ENTIRE deliverable in Korean (한국어). This prompt is written in English so the model can reason more richly, but the audience is Korean boiler dealer owners and field staff who will execute the output directly.
+- Keep Korean industry terms exactly as-is in the output: 대리점, 무상점검, 안심점검, 알림톡, 해피콜, 클린 CS, B/S, 성수기, 비수기, 객단가, 리뷰 락인, A/B/C 리드등급, 구축 아파트, 단지, 임대인, 세입자.
+- Do not translate region names, complex names, brand names, or proper nouns that appear in [Our Dealer Field Profile]. Use them verbatim.
+- The honorific tone for customer-facing scripts must follow Korean business politeness (해요체 with appropriate 존댓말). Internal staff scripts may use 합니다체.
+
+`;
+
+const PROMPT_LANG_FOOTER = `
+
+[Final reminder]
+- The final deliverable above must be in Korean. Do not output English sentences in the final deliverable except for unavoidable abbreviations (AI, KPI, CRM, B/S, QR).
+- Tables, bullet lists, sample messages, and verbal scripts — all in Korean.
+- If a section is missing input from [Our Dealer Field Profile], mark it as [수정 필요] in Korean instead of leaving it in English.`;
+
 const PROMPTS = [
-    {"id": "common", "title": "공통 현장정보 입력 블록", "tag": "기본 입력값", "summary": "모든 산출물 앞에 붙이는 대리점 현장정보 템플릿입니다.", "prompt": "[우리 대리점 현장정보]\n\n1. 대리점명: [예: 귀뚜라미 ○○대리점 / 경동나비엔 ○○대리점 / 린나이 ○○대리점]\n2. 담당 지역: [예: 서울 강동구 고덕동·명일동 / 부산 해운대구 좌동]\n3. 주요 고객층: [예: 20년 이상 구축 아파트 거주자, 신혼부부, 고령자 가정, 임대인, 상가 고객]\n4. 주요 주거 형태: [예: 구축 아파트, 빌라, 단독주택, 오피스텔, 상가]\n5. 자주 나오는 현장 문제:\n   - [예: 온수 지연]\n   - [예: 난방 편차]\n   - [예: 보일러 소음]\n   - [예: 배기통 노후]\n   - [예: 녹물·수압 문제]\n6. 최근 고객이 많이 하는 말:\n   - [예: “아직 고장은 안 났어요.”]\n   - [예: “겨울에만 쓰는데 지금 꼭 봐야 하나요?”]\n   - [예: “가격만 알려주세요.”]\n7. 우리 대리점의 강점:\n   - [예: 기사 3명 상시 대기]\n   - [예: 토요일 방문 가능]\n   - [예: 같은 단지 시공 경험 많음]\n   - [예: 설치 후 사용법까지 설명]\n   - [예: 강매 없이 점검 리포트 제공]\n8. 보유 장비 및 서비스:\n   - [예: 공기질 측정기 있음 / 없음]\n   - [예: 수질 간이키트 있음 / 없음]\n   - [예: 보양매트·덧신·QR 리뷰카드 있음 / 없음]\n9. 이번 달 목표:\n   - 무상점검 목표: [예: 50건]\n   - 견적 목표: [예: 20건]\n   - 성수기 예약 목표: [예: 15건]\n   - 리뷰 목표: [예: 10건]\n10. 사장님이 꼭 넣고 싶은 현장 이야기:\n   [예: 우리 지역은 15년 이상 된 아파트가 많고, 작년 겨울에 온수 지연 문의가 많았다. 고객들이 ‘보일러가 아직 돌아가는데 왜 바꿔야 하냐’고 많이 묻는다. 그래서 올해는 고장 나기 전에 여름에 무료점검으로 상태를 보여주고, 겨울 예약을 미리 잡는 방식으로 가고 싶다.]\n\n위 정보를 반드시 반영해서 결과물을 만들어라.\n너무 일반적인 문구가 아니라, 우리 지역·우리 고객·우리 현장 문제·우리 대리점 강점이 드러나게 작성하라."},
-    {"id": "db", "title": "고객 DB 분류표 생성", "tag": "CRM / 리드등급", "summary": "기존 고객 DB를 A/B/C 우선순위로 나누고, 무상점검·견적·예약 액션을 정리합니다.", "prompt": "너는 보일러 대리점의 비수기 영업 전략을 설계하는 CRM 컨설턴트다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “고객 DB 분류표”를 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제: [입력]\n6. 최근 고객이 많이 하는 말: [입력]\n7. 우리 대리점의 강점: [입력]\n8. 보유 장비 및 서비스: [입력]\n9. 이번 달 목표: [입력]\n10. 사장님이 꼭 넣고 싶은 현장 이야기: [입력]\n\n[작성 목적]\n여름 비수기에 기존 고객 DB를 분류해서\n1) 무상점검 대상,\n2) 교체 가능성이 높은 고객,\n3) 리뷰 확보 고객,\n4) 성수기 예약 유도 고객을 선별하려고 한다.\n\n[반드시 반영할 내용]\n- 설치 경과연수 기준\n- 최근 AS 이력\n- 온수·난방·소음·냄새·누수 등 불편 키워드\n- 고령자·영유아·환자 가정 등 안전 민감 고객\n- 구축 아파트, 빌라, 상가 등 우리 지역 특성\n- 리뷰 요청 가능 고객\n- 견적 문의 후 미구매 고객\n- 성수기 예약 가능 고객\n\n[출력 형식]\n아래 표 형식으로 작성하라.\n\n| 타깃 고객군 | CRM 필터 조건 | 확인해야 할 핵심 컬럼 | 고객에게 할 액션 | 우선순위 등급 | 현장 맞춤 설명 | 추천 멘트 |\n|---|---|---|---|---|---|---|\n\n[작성 지침]\n- A등급, B등급, C등급으로 우선순위를 나눠라.\n- 우리 대리점 현장정보에 있는 지역명, 고객층, 현장 문제를 반드시 문장에 반영하라.\n- “일반론”이 아니라 사장님이 바로 CRM 또는 엑셀에 옮길 수 있는 수준으로 구체적으로 작성하라.\n- 고객에게 바로 말할 수 있는 짧은 추천 멘트도 포함하라.\n- 마지막에는 “이번 주 바로 실행할 DB 추출 순서 5단계”를 추가하라."},
-    {"id": "call", "title": "알림톡·해피콜 스크립트 생성", "tag": "문자 / 전화 대본", "summary": "무상 안심점검 안내, 해피콜 1차 대본, 거절 대응 문구를 만듭니다.", "prompt": "너는 보일러 대리점의 고객 연락 스크립트를 만드는 영업 카피라이터다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “알림톡·해피콜 스크립트”를 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제: [입력]\n6. 최근 고객이 많이 하는 말: [입력]\n7. 우리 대리점의 강점: [입력]\n8. 보유 장비 및 서비스: [입력]\n9. 이번 달 목표: [입력]\n10. 사장님이 꼭 넣고 싶은 현장 이야기: [입력]\n\n[작성 목적]\n겨울 성수기 전에 기존 고객에게 무상 안심점검을 안내하고,\n방문 예약, 견적 상담, 성수기 우선예약으로 연결하고 싶다.\n\n[반드시 만들어야 할 산출물]\n1. AI 알림톡 문구 3종\n   - 기본형\n   - 구축 아파트 고객형\n   - 온수 불만 고객형\n\n2. 해피콜 1차 대본\n   - 오프닝\n   - 지난 이용 이력 언급\n   - 불편사항 확인 질문\n   - 무상점검 안내\n   - 일정 제안\n   - 마무리 멘트\n\n3. 거절 대응 스크립트\n   다음 고객 반응별로 작성하라.\n   - “멀쩡해요.”\n   - “돈 드나요?”\n   - “바빠요.”\n   - “다음에요.”\n   - “가격만 알려주세요.”\n   - “가족이랑 상의할게요.”\n   - “다른 데도 알아보고 있어요.”\n\n4. 문자 후속 안내 문구\n   - 전화 부재 고객용\n   - 일정 미확정 고객용\n   - 점검 후 견적 미결정 고객용\n   - 성수기 예약 유도용\n\n[작성 지침]\n- 문구는 너무 영업적으로 보이지 않게 작성하라.\n- “강매 없음”, “출장비 0원”, “점검 결과만 안내” 같은 신뢰 문구를 포함하라. 단, 실제 대리점 정책과 다르면 [수정 필요]로 표시하라.\n- 우리 지역명, 단지명, 고객 불편 사례를 자연스럽게 넣어라.\n- 고객이 부담을 느끼지 않도록 말투는 친절하고 짧게 작성하라.\n- 알림톡은 500자 이내로 작성하라.\n- 해피콜 대본은 실제 직원이 읽을 수 있게 구어체로 작성하라.\n\n[출력 형식]\n1. AI 알림톡 3종\n2. 해피콜 1차 대본 표\n3. 거절 대응 표\n4. 후속 문자 4종\n5. 사장님이 수정해야 할 항목 체크리스트"},
-    {"id": "cs", "title": "클린 CS 체크리스트 생성", "tag": "현장 품질관리", "summary": "기사 방문 품질을 표준화하고, 점검 방문을 리뷰·예약으로 연결합니다.", "prompt": "너는 보일러 대리점의 현장 서비스 품질관리 매뉴얼을 만드는 CS 운영 전문가다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “클린 CS 체크리스트”를 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제: [입력]\n6. 최근 고객이 많이 하는 말: [입력]\n7. 우리 대리점의 강점: [입력]\n8. 보유 장비 및 서비스: [입력]\n9. 이번 달 목표: [입력]\n10. 사장님이 꼭 넣고 싶은 현장 이야기: [입력]\n\n[작성 목적]\n기사 방문 품질을 표준화해서 고객 불만을 줄이고,\n무상점검 방문을 리뷰, 재방문, 성수기 예약으로 연결하려고 한다.\n\n[반드시 포함할 구간]\n1. 출발 전\n2. 고객 연락 전\n3. 방문 직전\n4. 자택 진입\n5. 점검 중\n6. 결과 설명\n7. 퇴실 전\n8. 방문 후 기록\n\n[반드시 포함할 항목]\n- 유니폼·명찰·사원증\n- 덧신·보양매트·쓰레기봉투·극세사천\n- 공기질 측정기 또는 수질키트 보유 여부\n- 방문 10~20분 전 연락\n- 방문 목적 재안내\n- 사진 촬영 전 동의\n- 고객 불편 키워드 확인\n- 정상/주의/조치필요 3단계 설명\n- 현장 정리\n- 만족 고객에게만 솔직 리뷰 요청\n- CRM 또는 예약대장 기록\n\n[출력 형식]\n아래 표로 작성하라.\n\n| 구간 | O/X 체크항목 | 담당자 | 고객에게 보이는 행동 | 주의할 말 | 완료 후 기록 |\n|---|---|---|---|---|---|\n\n[작성 지침]\n- 우리 대리점이 보유하지 않은 장비는 “대체 행동”을 제시하라.\n  예: 공기질 측정기 없음 → 환기 상태, 곰팡이, 습도 체감 확인으로 대체\n- 고령자 고객, 맞벌이 고객, 임대인 고객 등 우리 고객층에 맞는 CS 포인트를 반영하라.\n- 현장에서 기사가 바로 볼 수 있도록 짧고 실행형 문장으로 작성하라.\n- 마지막에는 “기사 교육용 5분 브리핑 멘트”를 추가하라."},
-    {"id": "bs", "title": "하절기 안심점검표 생성", "tag": "무상점검 / 증거화", "summary": "보일러·환기·수질 점검을 고객에게 보여줄 수 있는 증거 중심으로 정리합니다.", "prompt": "너는 보일러 대리점의 하절기 무상점검 프로그램을 설계하는 기술영업 전문가다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “하절기 B/S 안심점검표”를 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제: [입력]\n6. 최근 고객이 많이 하는 말: [입력]\n7. 우리 대리점의 강점: [입력]\n8. 보유 장비 및 서비스: [입력]\n9. 이번 달 목표: [입력]\n10. 사장님이 꼭 넣고 싶은 현장 이야기: [입력]\n\n[작성 목적]\n여름철 무상점검 방문 시 고객에게 “보여줄 수 있는 증거”를 남기고,\n단순 점검이 아니라 겨울 전 예방관리, 교체 검토, 성수기 예약으로 연결하려고 한다.\n\n[반드시 포함할 점검 구역]\n1. 보일러 본체\n2. 배기통·연통\n3. 온수\n4. 난방\n5. 누수·부식\n6. 소음·진동\n7. 환기\n8. 공기질\n9. 수질\n10. 고객 생활 불편사항\n\n[출력 형식]\n아래 표로 작성하라.\n\n| 구역 | 점검항목 | 점검 방법 | 고객에게 보여줄 증거 | 판정 기준 | 판정 결과 | 다음 액션 |\n|---|---|---|---|---|---|---|\n\n[판정 기준]\n- 정상\n- 주의\n- 조치필요\n- 교체검토\n\n[작성 지침]\n- 설치경과 4~6년, 7년 이상 등 교체 가능성 기준을 포함하라.\n- 누수, 배기통, 온수 지연, 소음, 녹물, 냄새 등 우리 지역에서 자주 나오는 현장 문제를 반영하라.\n- 고객에게 겁을 주는 표현은 피하고, “예방점검” 관점으로 설명하라.\n- 공기질 측정기나 수질키트가 없는 경우 대체 점검 방법을 작성하라.\n- 마지막에는 점검 후 고객에게 설명할 “3분 결과 안내 멘트”를 작성하라.\n- 또한 점검 결과별 후속 액션을 작성하라.\n  예: 정상 → 리뷰 요청 / 주의 → 9월 전 재점검 / 조치필요 → 견적 안내 / 교체검토 → 성수기 예약 제안"},
-    {"id": "upsell", "title": "업세일링 3대 패키지 생성", "tag": "패키지 / 객단가", "summary": "가격 비교가 아니라 고객 문제 해결형 패키지로 상담 구조를 바꿉니다.", "prompt": "너는 보일러 대리점의 패키지 상품과 제안 멘트를 만드는 영업전략 전문가다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “업세일링 패키지 3~5종”을 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제: [입력]\n6. 최근 고객이 많이 하는 말: [입력]\n7. 우리 대리점의 강점: [입력]\n8. 보유 장비 및 서비스: [입력]\n9. 이번 달 목표: [입력]\n10. 사장님이 꼭 넣고 싶은 현장 이야기: [입력]\n\n[작성 목적]\n고객이 “보일러 가격만” 비교하지 않도록,\n고객 불편과 생활상황에 맞춘 패키지 제안으로 객단가와 예약 전환율을 높이고 싶다.\n\n[기본 패키지 방향]\n아래 3개는 반드시 포함하라.\n1. 안심 케어 세트\n   - 대상: 7년 이상 사용 고객, AS 반복 고객, 고령자 가정\n2. 스마트 라이프 세트\n   - 대상: 맞벌이, 외출 잦은 가정, 임대인\n3. 온수 특화 세트\n   - 대상: 온수 지연, 수압 불만, 녹물·염소 냄새 고객\n\n필요하면 우리 현장정보에 맞춰 1~2개 패키지를 추가하라.\n예: 구축 아파트 집중 세트, 임대인 관리 세트, 상가 영업중단 최소화 세트, 고령자 안전 세트\n\n[출력 형식]\n아래 표로 작성하라.\n\n| 패키지명 | 구성 | 타깃 고객 | 고객 불편 포인트 | 제안 멘트 | 가격 설명 방식 | 후속 액션 |\n|---|---|---|---|---|---|---|\n\n[작성 지침]\n- 제품명이나 가격은 사장님이 나중에 넣을 수 있도록 [제품명 입력], [가격 입력] 형태로 비워둬라.\n- “싼 제품”이 아니라 “문제 해결” 중심으로 설명하라.\n- 우리 지역 현장 이야기와 실제 고객 반응을 멘트에 반영하라.\n- 각 패키지별로 고객이 거절했을 때의 대응 멘트도 추가하라.\n- 마지막에는 “상담 시 패키지 선택 질문 7개”를 작성하라."},
-    {"id": "marketing", "title": "SNS/리뷰 캘린더 생성", "tag": "4주 실행계획", "summary": "지역 채널, 네이버 플레이스, 지역카페, 리뷰 요청을 4주 액션으로 정리합니다.", "prompt": "너는 지역 기반 보일러 대리점의 오프라인·온라인 마케팅 실행계획을 만드는 마케팅 매니저다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “4주 지역 마케팅·SNS/리뷰 캘린더”를 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제: [입력]\n6. 최근 고객이 많이 하는 말: [입력]\n7. 우리 대리점의 강점: [입력]\n8. 보유 장비 및 서비스: [입력]\n9. 이번 달 목표: [입력]\n10. 사장님이 꼭 넣고 싶은 현장 이야기: [입력]\n\n[작성 목적]\n5~8월 비수기에 지역 내 무상점검 방문을 늘리고,\n네이버 플레이스 리뷰, 지역카페 반응, 아파트 단지 홍보, 성수기 예약을 동시에 만들고 싶다.\n\n[반드시 포함할 채널]\n1. 기존 고객 알림톡\n2. 네이버 플레이스 공지\n3. 지역카페 생활정보 글\n4. 아파트 단지 게시판 또는 엘리베이터 게시 협의\n5. 방문 고객 QR 리뷰카드\n6. 점검 후 리마인드 문자\n7. 성수기 예약대장 정리\n\n[출력 형식]\n아래 표로 작성하라.\n\n| 주차 | 핵심 목표 | 실행 액션 | 사용할 문구/콘텐츠 | 담당자 | KPI | 주의사항 |\n|---|---|---|---|---|---|---|\n\n[작성 지침]\n- 1주차부터 4주차까지 작성하라.\n- 우리 지역명, 단지명, 주거형태, 주요 고객층을 반영하라.\n- 네이버 플레이스 공지문 예시 1개를 작성하라.\n- 지역카페 생활정보 글 예시 1개를 작성하라.\n- 아파트 게시판용 짧은 안내문 1개를 작성하라.\n- 리뷰 요청은 절대 긍정 리뷰 강요처럼 보이지 않게 작성하라.\n- 만족 고객에게 “솔직한 후기”를 요청하는 방식으로 작성하라.\n- 마지막에는 “이번 달 마케팅 점검표”를 추가하라."},
-    {"id": "reservation", "title": "성수기 예약 대장 생성", "tag": "예약관리 / 재콜", "summary": "비수기 점검·견적·보류 고객을 9~12월 성수기 예약으로 전환하는 대장을 만듭니다.", "prompt": "너는 보일러 대리점의 성수기 예약관리 시스템을 설계하는 영업운영 컨설턴트다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “성수기 예약 대장” 양식을 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제: [입력]\n6. 최근 고객이 많이 하는 말: [입력]\n7. 우리 대리점의 강점: [입력]\n8. 보유 장비 및 서비스: [입력]\n9. 이번 달 목표: [입력]\n10. 사장님이 꼭 넣고 싶은 현장 이야기: [입력]\n\n[작성 목적]\n5~8월 비수기에 확보한 점검 고객, 견적 고객, 보류 고객을\n9~12월 성수기 설치·수리·교체 예약으로 전환하기 위한 관리 대장을 만들고 싶다.\n\n[반드시 포함할 관리 항목]\n- 예약ID\n- 고객ID\n- 고객명\n- 연락처\n- 주소 또는 단지명\n- 설치경과년수\n- 현재 보일러 모델\n- 리드등급\n- 현재상태\n- 보류사유\n- 희망공사월\n- 관심패키지\n- B/S 점검 결과\n- 주의항목수\n- 조치필요수\n- 다음컨택일\n- 담당자\n- 리뷰상태\n- 최종결과\n- 비고\n\n[현재상태 예시]\n신규, 알림톡발송, 통화완료, 점검예약, 점검완료, 견적발송, 가족상담중, 타사비교중, 예약확정, 구매완료, 거절, 수신거부\n\n[보류사유 예시]\n비용, 일정, 가족상담, 타사비교, 아직 정상작동, 임대인 승인 필요, 세입자 일정 미정\n\n[출력 형식]\n아래 표로 작성하라.\n\n| 컬럼명 | 입력 예시 | 선택값 | 관리 목적 | 재콜 기준 | 담당자 메모 |\n|---|---|---|---|---|---|\n\n[작성 지침]\n- 엑셀이나 구글시트에 바로 옮길 수 있게 작성하라.\n- 리드등급 A/B/C 기준을 만들어라.\n- 다음컨택일 누락을 막는 운영 규칙을 작성하라.\n- 보류사유별 재콜 멘트를 작성하라.\n- 우리 대리점의 이번 달 목표에 맞춰 KPI를 설정하라.\n- 마지막에는 “5월 알림톡 → 6월 무상점검 → 7월 리뷰·패키지 제안 → 8~9월 성수기 예약 확정” 흐름의 운영 프로세스를 작성하라."},
-    {"id": "integrated", "title": "7대 산출물 통합 생성", "tag": "원클릭 전체 생성", "summary": "개별 산출물을 한 번에 생성하는 통합 프롬프트입니다.", "prompt": "너는 보일러 대리점의 비수기 영업 실행도구를 만드는 컨설턴트다.\n\n아래 [우리 대리점 현장정보]를 반영해서, 우리 대리점 전용 “비수기 보일러 영업 7대 실전 도구”를 한 번에 만들어라.\n\n[우리 대리점 현장정보]\n1. 대리점명: [입력]\n2. 담당 지역: [입력]\n3. 주요 고객층: [입력]\n4. 주요 주거 형태: [입력]\n5. 자주 나오는 현장 문제:\n   - [입력]\n   - [입력]\n   - [입력]\n6. 최근 고객이 많이 하는 말:\n   - [입력]\n   - [입력]\n7. 우리 대리점의 강점:\n   - [입력]\n   - [입력]\n8. 보유 장비 및 서비스:\n   - [입력]\n9. 이번 달 목표:\n   - 무상점검: [입력]건\n   - 견적: [입력]건\n   - 성수기 예약: [입력]건\n   - 리뷰: [입력]건\n10. 사장님이 꼭 넣고 싶은 현장 이야기:\n   [입력]\n\n[만들어야 할 산출물]\n1. 고객 DB 분류표\n2. 알림톡·해피콜 스크립트\n3. 클린 CS 체크리스트\n4. 하절기 B/S 안심점검표\n5. 업세일링 3대 패키지\n6. 지역 마케팅·SNS/리뷰 캘린더\n7. 성수기 예약 대장\n\n[전체 작성 원칙]\n- 모든 산출물에 우리 지역, 우리 고객층, 우리 현장 문제, 우리 대리점 강점이 반영되어야 한다.\n- 사장님이 입력한 “현장 이야기”를 각 산출물의 멘트, 기준, 액션, KPI에 자연스럽게 녹여라.\n- 너무 추상적인 전략 문구를 쓰지 말고, 직원이 바로 실행할 수 있는 표와 대본 중심으로 작성하라.\n- 가격, 제품명, 전화번호, 단지명 등 사장님이 나중에 수정해야 할 부분은 [수정 필요] 또는 [입력]으로 표시하라.\n- 고객에게 부담을 주는 강매 표현은 피하고, 예방점검·안전·겨울 전 준비·솔직 후기 요청 중심으로 작성하라.\n\n[출력 형식]\n각 산출물을 번호별로 구분해서 작성하라.\n표, 문자 예시, 전화 대본, 체크리스트, KPI를 포함하라.\n마지막에는 “이번 주 바로 실행할 10가지 액션”을 정리하라."}
+    {
+        id: "common",
+        title: "공통 현장정보 입력 블록",
+        tag: "기본 입력값",
+        summary: "모든 산출물 앞에 붙이는 대리점 현장정보 템플릿입니다. (영문 지시 → 한국어 출력)",
+        prompt: PROMPT_LANG_HEADER + `You are preparing the standardized [Our Dealer Field Profile] block that every downstream deliverable in this workflow will reference. This block captures who the dealer is, what their region looks like, and what problems they face.
+
+[FIELD PROFILE BLOCK]
+
+[Instructions for this step]
+- Do not produce any sales deliverable yet. Confirm that the profile above is captured and ready to attach to subsequent prompts.
+- If any field is empty or still shows [input], list those fields back to the owner so they fill them in first.
+- Briefly reflect to the owner (in Korean, 3~5 lines) which characteristics of this profile will most likely steer the downstream outputs (e.g., 구축 아파트 비중, 고령자 가정, 토요일 방문 가능 여부 등).` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "db",
+        title: "고객 DB 분류표 생성",
+        tag: "CRM / 리드등급",
+        summary: "기존 고객 DB를 A/B/C 우선순위로 나누고, 무상점검·견적·예약 액션을 정리합니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a CRM consultant designing the off-season sales strategy for a Korean boiler dealer. Build a customized customer DB classification table using the dealer field profile below.
+
+[FIELD PROFILE BLOCK]
+
+[Objective]
+During the summer off-season, classify the existing customer database to identify:
+1) free inspection (무상점검) candidates,
+2) high replacement-probability customers,
+3) review collection candidates,
+4) peak-season reservation (성수기 예약) candidates.
+
+[Required Content]
+- Years since installation (설치 경과연수).
+- Recent AS history.
+- Discomfort keywords: hot water delay, heating imbalance, noise, smell, leaks (온수 지연, 난방 편차, 소음, 냄새, 누수).
+- Safety-sensitive households (고령자, 영유아, 환자 가정).
+- Regional characteristics specific to this dealer's area (구축 아파트, 빌라, 상가).
+- Customers eligible for review requests.
+- Quote inquiries that did not convert.
+- Peak-season reservation candidates.
+
+[Output Format]
+Produce a Korean-language table with exactly these columns:
+| 타깃 고객군 | CRM 필터 조건 | 확인해야 할 핵심 컬럼 | 고객에게 할 액션 | 우선순위 등급 | 현장 맞춤 설명 | 추천 멘트 |
+
+[Writing Guidelines]
+- Tier customers into A / B / C priority.
+- Reflect the specific region, customer segment, and field issues from the profile in every row.
+- The owner must be able to copy this directly into a CRM or spreadsheet.
+- Include short verbal scripts (in Korean) staff can read to customers.
+- End the deliverable with a section titled "이번 주 바로 실행할 DB 추출 순서 5단계" listing 5 concrete steps.` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "call",
+        title: "알림톡·해피콜 스크립트 생성",
+        tag: "문자 / 전화 대본",
+        summary: "무상 안심점검 안내, 해피콜 1차 대본, 거절 대응 문구를 만듭니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a sales copywriter producing customer outreach scripts for a Korean boiler dealer. Build alimtalk (알림톡), happy-call (해피콜), and objection-handling scripts tailored to the dealer profile below.
+
+[FIELD PROFILE BLOCK]
+
+[Objective]
+Before the winter peak season, contact existing customers about a free safety inspection (무상 안심점검) and convert those contacts into visit reservations, quote consultations, and pre-season reservations.
+
+[Required Deliverables]
+1. Three alimtalk (알림톡) message variants:
+   - Standard version
+   - Aging-apartment (구축 아파트) resident version
+   - Hot-water-complaint customer version
+2. A first-call happy-call script with these stages:
+   - Opening
+   - Reference to past service history
+   - Discomfort confirmation questions
+   - Free inspection offer
+   - Schedule proposal
+   - Closing remarks
+3. Objection-handling scripts for each of these customer responses:
+   - "멀쩡해요." (It's fine.)
+   - "돈 드나요?" (Does it cost?)
+   - "바빠요." (I'm busy.)
+   - "다음에요." (Next time.)
+   - "가격만 알려주세요." (Just tell me the price.)
+   - "가족이랑 상의할게요." (I'll discuss with family.)
+   - "다른 데도 알아보고 있어요." (I'm checking other dealers.)
+4. Follow-up text messages for:
+   - Customers who missed the call
+   - Customers without a confirmed schedule
+   - Post-inspection customers who have not decided on a quote
+   - Peak-season reservation nudges
+
+[Writing Guidelines]
+- Avoid sales-heavy tone. Add trust phrases: 강매 없음, 출장비 0원, 점검 결과만 안내 — but mark with [수정 필요] if these do not match the dealer's real policy.
+- Embed the dealer's specific region, complex names, and customer pain points naturally.
+- Keep alimtalk messages under 500 Korean characters each.
+- Happy-call scripts must be in spoken Korean (구어체) so a staff member can read them aloud.
+
+[Output Format]
+1. 알림톡 3종
+2. 해피콜 1차 대본 (단계별 표)
+3. 거절 대응 표
+4. 후속 문자 4종
+5. 사장님이 수정해야 할 항목 체크리스트` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "cs",
+        title: "클린 CS 체크리스트 생성",
+        tag: "현장 품질관리",
+        summary: "기사 방문 품질을 표준화하고, 점검 방문을 리뷰·예약으로 연결합니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a field-service quality manager building the on-site CS (Customer Service) playbook for a Korean boiler dealer. Build a clean-CS (클린 CS) checklist using the dealer profile below.
+
+[FIELD PROFILE BLOCK]
+
+[Objective]
+Standardize technician visit quality to reduce customer complaints, and convert free inspection visits into reviews, repeat visits, and peak-season reservations.
+
+[Required Sections]
+Cover all 8 stages of a technician visit:
+1. Before departure (출발 전)
+2. Before calling the customer (고객 연락 전)
+3. Just before arrival (방문 직전)
+4. Entering the home (자택 진입)
+5. During inspection (점검 중)
+6. Result explanation (결과 설명)
+7. Before leaving (퇴실 전)
+8. After-visit recording (방문 후 기록)
+
+[Required Items]
+- Uniform / nameplate / employee ID
+- Shoe covers, protective mats, trash bags, microfiber cloths
+- Air quality meter or water test kit availability
+- 10~20 minute pre-arrival call
+- Re-explanation of visit purpose
+- Photo consent before taking photos
+- Discomfort keyword capture
+- 3-tier result explanation: 정상 / 주의 / 조치필요
+- Site cleanup
+- Honest review request — only to satisfied customers
+- CRM / reservation log entry
+
+[Output Format]
+Produce a Korean-language table:
+| 구간 | O/X 체크항목 | 담당자 | 고객에게 보이는 행동 | 주의할 말 | 완료 후 기록 |
+
+[Writing Guidelines]
+- For equipment the dealer does NOT own (per the profile), suggest a "대체 행동" (substitute action). Example: 공기질 측정기 없음 → 환기 상태 / 곰팡이 / 습도 체감 확인으로 대체.
+- Reflect CS pain points specific to this dealer's customer segments (고령자, 맞벌이, 임대인, etc.).
+- Use short, action-oriented Korean sentences a technician can scan on-site.
+- End with a 5-minute "기사 교육용 5분 브리핑 멘트" the owner can read aloud at morning huddle.` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "bs",
+        title: "하절기 안심점검표 생성",
+        tag: "무상점검 / 증거화",
+        summary: "보일러·환기·수질 점검을 고객에게 보여줄 수 있는 증거 중심으로 정리합니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a technical sales specialist designing the summer free-inspection program (하절기 무상점검) for a Korean boiler dealer. Build a summer B/S 안심점검표 using the dealer profile below.
+
+[FIELD PROFILE BLOCK]
+
+[Objective]
+On every summer inspection visit, leave the customer with visible evidence of the inspection, and convert routine inspection into pre-winter preventive maintenance, replacement consideration, and peak-season reservation.
+
+[Required Inspection Zones]
+1. 보일러 본체 (boiler body)
+2. 배기통·연통 (flue / exhaust)
+3. 온수 (hot water)
+4. 난방 (heating)
+5. 누수·부식 (leaks / corrosion)
+6. 소음·진동 (noise / vibration)
+7. 환기 (ventilation)
+8. 공기질 (air quality)
+9. 수질 (water quality)
+10. 고객 생활 불편사항 (lifestyle discomfort items)
+
+[Output Format]
+Produce a Korean-language table:
+| 구역 | 점검항목 | 점검 방법 | 고객에게 보여줄 증거 | 판정 기준 | 판정 결과 | 다음 액션 |
+
+[Decision Tiers]
+정상 / 주의 / 조치필요 / 교체검토
+
+[Writing Guidelines]
+- Include replacement-likelihood criteria by installation age (e.g., 4~6년: 예방관리, 7년 이상: 교체검토).
+- Reflect dealer-area-specific issues from the profile (누수, 배기통, 온수 지연, 소음, 녹물, 냄새 등).
+- Use a "예방점검" framing instead of scare tactics.
+- If the dealer lacks air-quality meter or water-test kit, provide alternative inspection methods.
+- After the table, add a "3분 결과 안내 멘트" (3-minute result-explanation script for technicians to read).
+- After that, add follow-up actions per result tier. Example:
+  정상 → 리뷰 요청 / 주의 → 9월 전 재점검 / 조치필요 → 견적 안내 / 교체검토 → 성수기 예약 제안` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "upsell",
+        title: "업세일링 3대 패키지 생성",
+        tag: "패키지 / 객단가",
+        summary: "가격 비교가 아니라 고객 문제 해결형 패키지로 상담 구조를 바꿉니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a sales strategist designing upsell packages and consultative scripts for a Korean boiler dealer. Build 3~5 customized upsell packages using the dealer profile below.
+
+[FIELD PROFILE BLOCK]
+
+[Objective]
+Stop customers from comparing on price alone. Convert each consultation into a problem-solving package recommendation that raises 객단가 (per-customer revenue) and reservation conversion.
+
+[Base Package Direction — required]
+1. 안심 케어 세트
+   - Target: 7+ year users, repeat-AS customers, elderly households
+2. 스마트 라이프 세트
+   - Target: dual-income households, frequently-out homes, landlords
+3. 온수 특화 세트
+   - Target: hot-water-delay complaints, low pressure, rust/chlorine smell
+
+Add 1~2 additional packages tailored to the profile (e.g., 구축 아파트 집중 세트, 임대인 관리 세트, 상가 영업중단 최소화 세트, 고령자 안전 세트).
+
+[Output Format]
+Produce a Korean-language table:
+| 패키지명 | 구성 | 타깃 고객 | 고객 불편 포인트 | 제안 멘트 | 가격 설명 방식 | 후속 액션 |
+
+[Writing Guidelines]
+- Leave product names and prices as [제품명 입력], [가격 입력] for the owner to fill in later.
+- Frame each package as "problem solving," not "cheap product."
+- Embed regional field stories and real customer reactions from the profile.
+- For each package, add an objection-handling script for when the customer declines.
+- At the end, add "상담 시 패키지 선택 질문 7개" — seven diagnostic questions staff can ask the customer to choose the right package.` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "marketing",
+        title: "SNS/리뷰 캘린더 생성",
+        tag: "4주 실행계획",
+        summary: "지역 채널, 네이버 플레이스, 지역카페, 리뷰 요청을 4주 액션으로 정리합니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a local marketing manager designing the 4-week off-season acquisition plan for a Korean boiler dealer. Build a 4-week regional marketing / SNS / review calendar using the dealer profile below.
+
+[FIELD PROFILE BLOCK]
+
+[Objective]
+From May to August (off-season), grow free-inspection visits and simultaneously build Naver Place reviews, local-cafe responses (지역카페), apartment-complex bulletin board reach, and peak-season reservations.
+
+[Required Channels]
+1. 기존 고객 알림톡
+2. 네이버 플레이스 공지
+3. 지역카페 생활정보 글
+4. 아파트 단지 게시판 / 엘리베이터 게시 협의
+5. 방문 고객 QR 리뷰카드
+6. 점검 후 리마인드 문자
+7. 성수기 예약대장 정리
+
+[Output Format]
+Produce a Korean-language table covering Week 1 to Week 4:
+| 주차 | 핵심 목표 | 실행 액션 | 사용할 문구/콘텐츠 | 담당자 | KPI | 주의사항 |
+
+[Writing Guidelines]
+- Reflect the dealer's region name, complex names, housing type, and customer segment in every row.
+- Include 1 example Naver Place announcement (네이버 플레이스 공지문) in Korean.
+- Include 1 example 지역카페 lifestyle-info post (지역카페 생활정보 글) in Korean.
+- Include 1 short bulletin-board notice (아파트 게시판용 안내문) in Korean.
+- Review requests must never look like coerced-positive reviews. Frame them as "솔직한 후기" requests to satisfied customers only.
+- End the deliverable with "이번 달 마케팅 점검표" (this month's marketing audit checklist).` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "reservation",
+        title: "성수기 예약 대장 생성",
+        tag: "예약관리 / 재콜",
+        summary: "비수기 점검·견적·보류 고객을 9~12월 성수기 예약으로 전환하는 대장을 만듭니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a sales-operations consultant designing the peak-season reservation management system for a Korean boiler dealer. Build a peak-season reservation log (성수기 예약 대장) using the dealer profile below.
+
+[FIELD PROFILE BLOCK]
+
+[Objective]
+Convert inspection, quote, and on-hold customers gathered in May~August into confirmed September~December installation / repair / replacement reservations.
+
+[Required Management Columns]
+- 예약ID
+- 고객ID
+- 고객명
+- 연락처
+- 주소 / 단지명
+- 설치경과년수
+- 현재 보일러 모델
+- 리드등급
+- 현재상태
+- 보류사유
+- 희망공사월
+- 관심패키지
+- B/S 점검 결과
+- 주의항목수
+- 조치필요수
+- 다음컨택일
+- 담당자
+- 리뷰상태
+- 최종결과
+- 비고
+
+[Status Vocabulary]
+신규, 알림톡발송, 통화완료, 점검예약, 점검완료, 견적발송, 가족상담중, 타사비교중, 예약확정, 구매완료, 거절, 수신거부.
+
+[Hold-Reason Vocabulary]
+비용, 일정, 가족상담, 타사비교, 아직 정상작동, 임대인 승인 필요, 세입자 일정 미정.
+
+[Output Format]
+Produce a Korean-language table:
+| 컬럼명 | 입력 예시 | 선택값 | 관리 목적 | 재콜 기준 | 담당자 메모 |
+
+[Writing Guidelines]
+- The structure must be directly copyable into Excel or Google Sheets.
+- Define explicit A/B/C 리드등급 criteria.
+- Define operational rules to prevent missing the 다음컨택일 (next-contact-date).
+- Provide a re-call (재콜) script per hold-reason category.
+- Tie KPIs to the targets in the dealer profile.
+- End the deliverable with a Korean process flow titled "5월 알림톡 → 6월 무상점검 → 7월 리뷰·패키지 제안 → 8~9월 성수기 예약 확정".` + PROMPT_LANG_FOOTER
+    },
+    {
+        id: "integrated",
+        title: "7대 산출물 통합 생성",
+        tag: "원클릭 전체 생성",
+        summary: "개별 산출물을 한 번에 생성하는 통합 프롬프트입니다.",
+        prompt: PROMPT_LANG_HEADER + `You are a senior consultant building the complete off-season sales toolkit for a Korean boiler dealer. Using the dealer profile below, produce the dealer's customized "비수기 보일러 영업 7대 실전 도구" in one pass.
+
+[FIELD PROFILE BLOCK]
+
+[Required Deliverables]
+1. 고객 DB 분류표
+2. 알림톡·해피콜 스크립트
+3. 클린 CS 체크리스트
+4. 하절기 B/S 안심점검표
+5. 업세일링 3대 패키지
+6. 지역 마케팅·SNS/리뷰 캘린더
+7. 성수기 예약 대장
+
+[Writing Principles for All 7 Deliverables]
+- Every deliverable must reflect the dealer's region, customer segment, field issues, and strengths.
+- Weave the owner's "현장 이야기" (field story) into scripts, KPI targets, and action items.
+- No abstract strategy language. Use tables, scripts, and checklists that staff can execute today.
+- Leave product names, prices, phone numbers, and complex names as [수정 필요] or [입력] placeholders for the owner.
+- Avoid pressure-sales tone. Frame everything around 예방점검 · 안전 · 겨울 전 준비 · 솔직 후기 요청.
+
+[Output Format]
+- Number each deliverable (1 through 7) as a top-level section.
+- Use tables, sample messages, phone scripts, checklists, and KPIs inside each section.
+- End the entire output with a section titled "이번 주 바로 실행할 10가지 액션" — 10 concrete actions the owner can start tomorrow.` + PROMPT_LANG_FOOTER
+    }
 ];
 
 // Prompt State
@@ -686,11 +1028,26 @@ function p_asBullets(v, fallback){
 }
 function p_contextBlock(){
     const d = p_getData();
-    return `[우리 대리점 현장정보]\n\n1. 대리점명: ${p_safe(d.dealer,'[입력]')}\n2. 담당 지역: ${p_safe(d.region,'[입력]')}\n3. 주요 고객층: ${p_safe(d.customers,'[입력]')}\n4. 주요 주거 형태: ${p_safe(d.housing,'[입력]')}\n5. 자주 나오는 현장 문제:\n${p_asBullets(d.issues,['[입력]'])}\n6. 최근 고객이 많이 하는 말:\n${p_asBullets(d.quotes,['[입력]'])}\n7. 우리 대리점의 강점:\n${p_asBullets(d.strengths,['[입력]'])}\n8. 보유 장비 및 서비스:\n${p_asBullets(d.equipment,['[입력]'])}\n9. 이번 달 목표: ${p_safe(d.goals,'[입력]')}\n10. 사장님이 꼭 넣고 싶은 현장 이야기:\n   ${p_safe(d.story,'[입력]')}`;
+    return `[Our Dealer Field Profile]
+
+1. Dealer name (대리점명): ${p_safe(d.dealer,'[input]')}
+2. Service area (담당 지역): ${p_safe(d.region,'[input]')}
+3. Primary customer segment (주요 고객층): ${p_safe(d.customers,'[input]')}
+4. Primary housing types (주요 주거 형태): ${p_safe(d.housing,'[input]')}
+5. Frequent field issues (자주 나오는 현장 문제):
+${p_asBullets(d.issues,['[input]'])}
+6. Common customer remarks (최근 고객이 많이 하는 말):
+${p_asBullets(d.quotes,['[input]'])}
+7. Our dealer's strengths (우리 대리점의 강점):
+${p_asBullets(d.strengths,['[input]'])}
+8. Equipment and services we have (보유 장비 및 서비스):
+${p_asBullets(d.equipment,['[input]'])}
+9. This month's targets (이번 달 목표): ${p_safe(d.goals,'[input]')}
+10. Field story the owner wants to highlight (사장님이 꼭 넣고 싶은 현장 이야기):
+   ${p_safe(d.story,'[input]')}`;
 }
 function p_hydratedPrompt(prompt){
-    if(prompt.id === 'common') return p_contextBlock() + '\n\n위 정보를 반드시 반영해서 결과물을 만들어라. 너무 일반적인 문구가 아니라, 우리 지역·우리 고객·우리 현장 문제·우리 대리점 강점이 드러나게 작성하라.';
-    return prompt.prompt.replace(/\[우리 대리점 현장정보\][\s\S]*?(?=\n\n\[작성 목적\]|\n\n\[만들어야 할 산출물\]|\n\n\[반드시|\n\n\[기본|$)/, p_contextBlock() + '\n');
+    return prompt.prompt.replace('[FIELD PROFILE BLOCK]', p_contextBlock());
 }
 
 function p_renderTabs(){
