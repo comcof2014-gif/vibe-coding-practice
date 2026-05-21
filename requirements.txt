@@ -9,3 +9,9 @@ Pillow>=10.0.0
 
 # Windows-only WebView2/.NET bridge for pywebview
 pythonnet>=3.0.3; sys_platform == "win32"
+
+# On-device local AI runtime. Do not add torch or transformers.
+onnxruntime>=1.17.0
+tokenizers>=0.15.0
+numpy>=1.26.0
+requests>=2.31.0

@@ -5,10 +5,12 @@ Windows desktop wrapper for the 대리점장 대시보드.
 - Opens a native window via pywebview pointing at the local server.
 - Closing the window hides it to the system tray; quit only via tray menu.
 - A scheduler thread fires custom tkinter popup notifications at configured times.
+- The local ONNX AI engine is initialized in a background thread after the UI loads.
 """
 
 from __future__ import annotations
 
+import json
 import queue
 import socket
 import sys
@@ -16,11 +18,11 @@ import threading
 import time
 import tkinter as tk
 from datetime import datetime
-from pathlib import Path
 
 import uvicorn
 
-from app import app, BASE_DIR, load_config
+from ai_engine import ai_manager
+from app import BASE_DIR, app, load_config
 
 try:
     import webview
@@ -224,6 +226,19 @@ class DesktopApp:
         if self.popup is not None:
             self.popup.show(title, message)
 
+    def _push_ai_status(self, status: dict) -> None:
+        if self.window is None:
+            return
+        payload = json.dumps(status, ensure_ascii=False)
+        script = f"window.DealerDashboardAI && window.DealerDashboardAI.receiveStatus({payload});"
+        try:
+            self.window.evaluate_js(script)
+        except Exception:
+            pass
+
+    def _on_window_loaded(self) -> None:
+        ai_manager.start_async(progress_callback=self._push_ai_status)
+
     def _scheduler_loop(self) -> None:
         while not self._quitting.is_set():
             try:
@@ -309,6 +324,7 @@ class DesktopApp:
             height=860,
             min_size=(1024, 720),
         )
+        self.window.events.loaded += self._on_window_loaded
         self.window.events.closing += self._on_window_closing
         webview.start()
 
