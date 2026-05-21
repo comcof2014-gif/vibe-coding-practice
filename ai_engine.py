@@ -189,6 +189,43 @@ class LocalAIManager:
             "error": self.status().get("error"),
         }
 
+    def improve_prompt(
+        self,
+        prompt_id: str = "",
+        title: str = "",
+        summary: str = "",
+        base_prompt: str = "",
+        inputs: dict[str, Any] | None = None,
+        extra_request: str = "",
+    ) -> dict[str, Any]:
+        safe_payload = self._normalize_prompt_payload(
+            prompt_id=prompt_id,
+            title=title,
+            summary=summary,
+            base_prompt=base_prompt,
+            inputs=inputs or {},
+            extra_request=extra_request,
+        )
+        if not self.status().get("ready"):
+            self.start_async()
+            raise RuntimeError("local ai is still initializing")
+
+        self._set_status(state="generating", ready=True, progress=100, phase="로컬 AI가 프롬프트를 보강하는 중")
+        try:
+            text = self._generate_prompt_improvement(safe_payload)
+            text = self._clean_response(text)
+            if not text:
+                raise RuntimeError("local ai returned an empty prompt")
+            return {
+                "status": "ok",
+                "mode": "local-prompt-improvement",
+                "model": MODEL_REPO,
+                "model_file": MODEL_FILE,
+                "text": text,
+            }
+        finally:
+            self._set_status(state="ready", ready=True, progress=100, phase="로컬 AI 준비 완료")
+
     def _initialize(self) -> None:
         try:
             self._download_required_files()
@@ -345,6 +382,44 @@ class LocalAIManager:
             )
             return response["choices"][0]["text"]
 
+    def _generate_prompt_improvement(self, payload: dict[str, Any]) -> str:
+        if self._llm is None:
+            raise RuntimeError("local ai session is not ready")
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an on-device prompt engineering assistant inside a Korean boiler dealer dashboard. "
+                    "Rewrite and strengthen the selected operational prompt. "
+                    "Do not generate the final business output. Return only the improved prompt text. "
+                    "Keep the prompt mostly in English for instruction quality, but require all final outputs to be Korean."
+                ),
+            },
+            {"role": "user", "content": self._build_prompt_improvement_user_prompt(payload)},
+        ]
+
+        try:
+            response = self._llm.create_chat_completion(
+                messages=messages,
+                max_tokens=1100,
+                temperature=0.55,
+                top_p=0.92,
+                repeat_penalty=1.08,
+            )
+            return response["choices"][0]["message"]["content"]
+        except Exception:
+            prompt = self._format_chat_prompt(messages)
+            response = self._llm(
+                prompt,
+                max_tokens=1100,
+                temperature=0.55,
+                top_p=0.92,
+                repeat_penalty=1.08,
+                stop=["<|im_end|>", "</s>"],
+            )
+            return response["choices"][0]["text"]
+
     def _build_user_prompt(self, payload: dict[str, Any]) -> str:
         inputs_text = "\n".join(f"- {key}: {value}" for key, value in payload["inputs"].items())
         if not inputs_text:
@@ -374,6 +449,36 @@ class LocalAIManager:
 - 입력에 없는 숫자는 작은 범위로 가정하되 "가정"이라고 표시합니다.
 - 너무 길게 늘리지 말고 핵심 결과가 한 화면에서 읽히도록 900자 내외로 작성합니다.
 - 마크다운 코드블록은 사용하지 않습니다.
+""".strip()
+
+    def _build_prompt_improvement_user_prompt(self, payload: dict[str, Any]) -> str:
+        inputs_text = "\n".join(f"- {key}: {value}" for key, value in payload["inputs"].items())
+        if not inputs_text:
+            inputs_text = "- No dealer fields were filled. Add placeholders and [수정 필요] guards where needed."
+        user_request = payload["extra_request"] or "No extra request. Make the prompt more practical for a boiler dealer."
+        return f"""
+[Selected Prompt]
+- ID: {payload["prompt_id"]}
+- Title: {payload["title"]}
+- Summary: {payload["summary"]}
+
+[Current Prompt To Rewrite]
+{payload["base_prompt"]}
+
+[Dealer Field Inputs]
+{inputs_text}
+
+[User's Improvement Request]
+{user_request}
+
+[Rewrite Requirements]
+1. Return only the revised prompt text. Do not explain what you changed.
+2. Preserve the original business goal, but incorporate the user's improvement request deeply.
+3. The revised prompt must be more specific to a Korean boiler dealer: region, customer segment, staff workflow, CRM fields, visit flow, KPI, and customer-facing wording.
+4. If the request asks for "clean CS manual", make the prompt produce a cleaner, more trustworthy technician/staff service manual: dress, greeting, site cleanup, photo report, complaint response, and follow-up.
+5. Keep the instruction body mainly in English, but include Korean section names and require the final answer to be Korean.
+6. Add concrete output sections, writing rules, and quality checks so a small local model can produce less generic output.
+7. Remove vague wording. Use measurable instructions and short tables where useful.
 """.strip()
 
     def _format_chat_prompt(self, messages: list[dict[str, str]]) -> str:
@@ -515,6 +620,30 @@ class LocalAIManager:
             inputs=data.get("inputs") or {},
             extra_request=data.get("extra_request", ""),
         )
+
+    def _normalize_prompt_payload(
+        self,
+        prompt_id: str,
+        title: str,
+        summary: str,
+        base_prompt: str,
+        inputs: dict[str, Any],
+        extra_request: str,
+    ) -> dict[str, Any]:
+        clean_inputs: dict[str, str] = {}
+        for key, value in (inputs or {}).items():
+            key_text = str(key).strip()[:80]
+            value_text = str(value).strip()[:1000]
+            if key_text and value_text:
+                clean_inputs[key_text] = value_text
+        return {
+            "prompt_id": str(prompt_id or "")[:80],
+            "title": str(title or "프롬프트")[:200],
+            "summary": str(summary or "")[:1000],
+            "base_prompt": str(base_prompt or "")[:9000],
+            "inputs": clean_inputs,
+            "extra_request": str(extra_request or "")[:1200],
+        }
 
     def _normalize_payload(
         self,
