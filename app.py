@@ -4,12 +4,14 @@ import re
 import sys
 import threading
 import webbrowser
-from datetime import datetime
+import html as html_lib
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from uuid import uuid4
 
+import requests
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -176,6 +178,138 @@ class CalendarEntryIn(BaseModel):
         return v.lower()
 
 
+class CalendarAiSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    region: str = Field(default="", max_length=120)
+    year: int = Field(default_factory=lambda: datetime.now().year, ge=2024, le=2100)
+    month: int = Field(default_factory=lambda: datetime.now().month, ge=1, le=12)
+    max_results: int = Field(default=5, ge=1, le=8)
+
+    @field_validator("query", "region")
+    @classmethod
+    def _strip_text(cls, v: str) -> str:
+        return str(v or "").strip()
+
+
+TAG_RE = re.compile(r"<[^>]+>")
+FULL_DATE_RE = re.compile(r"(20\d{2})\D{0,4}(\d{1,2})\D{0,4}(\d{1,2})")
+KOREAN_MONTH_DAY_RE = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+SLASH_MONTH_DAY_RE = re.compile(r"(?<!\d)(\d{1,2})[./-](\d{1,2})(?!\d)")
+
+
+def clean_search_text(value: str) -> str:
+    value = TAG_RE.sub(" ", value or "")
+    value = html_lib.unescape(value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def clip_calendar_title(query: str, index: int) -> str:
+    base = re.sub(r"[^0-9A-Za-z가-힣 ]+", " ", query or "")
+    words = [w for w in base.split() if w not in {"일정", "행사", "검색", "캘린더"}]
+    title = "".join(words[:2]) or "AI일정"
+    suffix = str(index)
+    return (title[: max(1, TITLE_MAX_LEN - len(suffix))] + suffix)[:TITLE_MAX_LEN]
+
+
+def last_day_of_month(year: int, month: int) -> int:
+    if month == 12:
+        return 31
+    return (date(year, month + 1, 1) - timedelta(days=1)).day
+
+
+def valid_month_date(year: int, month: int, day: int) -> str | None:
+    try:
+        parsed = date(year, month, day)
+    except ValueError:
+        return None
+    return parsed.isoformat()
+
+
+def fetch_schedule_search_results(query: str, max_results: int) -> tuple[list[dict], str | None]:
+    try:
+        url = "https://duckduckgo.com/html/?" + urlencode({"q": query})
+        res = requests.get(
+            url,
+            timeout=8,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) dealer-dashboard/1.0",
+                "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.6",
+            },
+        )
+        res.raise_for_status()
+    except requests.RequestException as exc:
+        return [], str(exc)
+
+    results: list[dict] = []
+    blocks = re.split(r'<div[^>]+class="[^"]*result[^"]*"', res.text)
+    for block in blocks[1:]:
+        title_match = re.search(r'class="result__a"[^>]*>(.*?)</a>', block, flags=re.S)
+        snippet_match = re.search(r'class="result__snippet"[^>]*>(.*?)</(?:a|div)>', block, flags=re.S)
+        href_match = re.search(r'href="([^"]+)"', title_match.group(0), flags=re.S) if title_match else None
+        title = clean_search_text(title_match.group(1) if title_match else "")
+        snippet = clean_search_text(snippet_match.group(1) if snippet_match else "")
+        href = html_lib.unescape(href_match.group(1)) if href_match else ""
+        if title or snippet:
+            results.append({"title": title[:160], "snippet": snippet[:260], "url": href[:500]})
+        if len(results) >= max_results:
+            break
+    return results, None
+
+
+def extract_dates_from_search(payload: CalendarAiSearchRequest, results: list[dict]) -> list[str]:
+    text = "\n".join(
+        [payload.query, payload.region]
+        + [f"{item.get('title', '')} {item.get('snippet', '')}" for item in results]
+    )
+    dates: list[str] = []
+    seen = set()
+
+    def add_date(value: str | None):
+        if value and value not in seen:
+            seen.add(value)
+            dates.append(value)
+
+    for y, m, d in FULL_DATE_RE.findall(text):
+        y_i, m_i, d_i = int(y), int(m), int(d)
+        if y_i == payload.year and m_i == payload.month:
+            add_date(valid_month_date(y_i, m_i, d_i))
+    for m, d in KOREAN_MONTH_DAY_RE.findall(text):
+        m_i, d_i = int(m), int(d)
+        if m_i == payload.month:
+            add_date(valid_month_date(payload.year, m_i, d_i))
+    for m, d in SLASH_MONTH_DAY_RE.findall(text):
+        m_i, d_i = int(m), int(d)
+        if m_i == payload.month:
+            add_date(valid_month_date(payload.year, m_i, d_i))
+
+    if dates:
+        return dates[: payload.max_results]
+
+    last_day = last_day_of_month(payload.year, payload.month)
+    today = date.today()
+    start_day = today.day if today.year == payload.year and today.month == payload.month else 1
+    fallback_days = [start_day, min(last_day, start_day + 7), min(last_day, start_day + 14), min(last_day, start_day + 21)]
+    for day in fallback_days:
+        add_date(valid_month_date(payload.year, payload.month, max(1, day)))
+    return dates[: payload.max_results]
+
+
+def build_calendar_ai_entries(payload: CalendarAiSearchRequest, results: list[dict]) -> list[dict]:
+    dates = extract_dates_from_search(payload, results)
+    entries = []
+    for index, entry_date in enumerate(dates, start=1):
+        entries.append(
+            {
+                "id": uuid4().hex[:12],
+                "date": entry_date,
+                "title": clip_calendar_title(payload.query, index),
+                "color": PRESET_COLORS[(index - 1) % len(PRESET_COLORS)],
+                "source": "ai-search",
+            }
+        )
+    return entries
+
+
 class OpenUrlRequest(BaseModel):
     url: str
 
@@ -199,6 +333,30 @@ class AIMatchRequest(BaseModel):
         if not v:
             raise ValueError("text is required")
         return v
+
+
+class AIDemoRequest(BaseModel):
+    prompt_id: str = Field(default="", max_length=80)
+    title: str = Field(default="", max_length=200)
+    summary: str = Field(default="", max_length=1000)
+    output_sections: List[str] = Field(default_factory=list)
+    inputs: dict = Field(default_factory=dict)
+    extra_request: str = Field(default="", max_length=1000)
+
+    @field_validator("output_sections")
+    @classmethod
+    def _validate_sections(cls, v: List[str]) -> List[str]:
+        return [str(item).strip()[:120] for item in v if str(item).strip()][:12]
+
+    @field_validator("inputs")
+    @classmethod
+    def _validate_inputs(cls, v: dict) -> dict:
+        cleaned = {}
+        for key, value in (v or {}).items():
+            key = str(key).strip()[:80]
+            if key:
+                cleaned[key] = str(value).strip()[:1000]
+        return cleaned
 
 
 app = FastAPI(
@@ -274,7 +432,10 @@ async def api_ai_templates():
 
 @app.post("/api/ai/match")
 async def api_ai_match(payload: AIMatchRequest):
-    if not ai_manager.status().get("ready"):
+    status = ai_manager.status()
+    if not status.get("ready") and status.get("state") == "error":
+        return ai_manager.match(payload.text, top_k=payload.top_k)
+    if not status.get("ready"):
         ai_manager.start_async()
         raise HTTPException(
             status_code=409,
@@ -285,6 +446,40 @@ async def api_ai_match(payload: AIMatchRequest):
         )
     try:
         return ai_manager.match(payload.text, top_k=payload.top_k)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "status": ai_manager.status()})
+
+
+@app.post("/api/ai/demo")
+async def api_ai_demo(payload: AIDemoRequest):
+    status = ai_manager.status()
+    if not status.get("ready") and status.get("state") == "error":
+        return ai_manager.preview_demo(
+            prompt_id=payload.prompt_id,
+            title=payload.title,
+            summary=payload.summary,
+            output_sections=payload.output_sections,
+            inputs=payload.inputs,
+            extra_request=payload.extra_request,
+        )
+    if not status.get("ready"):
+        ai_manager.start_async()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "로컬 AI 엔진을 준비하는 중입니다.",
+                "status": ai_manager.status(),
+            },
+        )
+    try:
+        return ai_manager.compose_demo(
+            prompt_id=payload.prompt_id,
+            title=payload.title,
+            summary=payload.summary,
+            output_sections=payload.output_sections,
+            inputs=payload.inputs,
+            extra_request=payload.extra_request,
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail={"message": str(exc), "status": ai_manager.status()})
 
@@ -345,6 +540,47 @@ async def api_delete_shortcut(shortcut_id: str):
 async def api_open_url(payload: OpenUrlRequest):
     webbrowser.open(payload.url, new=2)
     return {"status": "ok", "url": payload.url}
+
+
+@app.post("/api/calendar/ai-search")
+def api_calendar_ai_search(payload: CalendarAiSearchRequest):
+    search_query = " ".join(
+        part for part in [
+            payload.query,
+            payload.region,
+            f"{payload.year}년 {payload.month}월",
+            "행사 일정 프로모션",
+        ] if part
+    )
+    sources, search_error = fetch_schedule_search_results(search_query, payload.max_results)
+    suggestions = build_calendar_ai_entries(payload, sources)
+
+    cfg = load_config()
+    entries = cfg.setdefault("calendar", [])
+    created: list[dict] = []
+    skipped: list[dict] = []
+    for item in suggestions:
+        same_day = [e for e in entries if e.get("date") == item["date"]]
+        if len(same_day) >= MAX_PER_DAY:
+            skipped.append({"date": item["date"], "reason": "day-limit"})
+            continue
+        entries.append(item)
+        created.append(item)
+
+    save_config(cfg)
+    return {
+        "status": "ok",
+        "query": search_query,
+        "created": created,
+        "skipped": skipped,
+        "sources": sources,
+        "search_error": search_error,
+        "message": (
+            "검색 결과에서 날짜를 찾지 못해 선택한 월 안의 실행 후보일로 등록했습니다."
+            if not sources or search_error else
+            "인터넷 검색 결과를 바탕으로 월간 일정에 반영했습니다."
+        ),
+    }
 
 
 @app.get("/api/calendar/presets")
