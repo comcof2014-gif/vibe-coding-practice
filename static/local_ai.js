@@ -196,6 +196,18 @@
         return out;
     }
 
+    function makePayload(prompt) {
+        return {
+            mode: 'demo',
+            prompt_id: prompt.id || '',
+            title: prompt.title || '',
+            summary: String(prompt.summary || '').slice(0, 600),
+            output_sections: (prompt.outputSections || []).slice(0, 8).map(item => String(item).slice(0, 100)),
+            inputs: compactInputs(getPromptInputs(prompt)),
+            extra_request: (byId('local-ai-extra')?.value || '').trim().slice(0, 700),
+        };
+    }
+
     function pausePromptRolling() {
         try {
             if (typeof p_paused !== 'undefined') p_paused = true;
@@ -226,15 +238,8 @@
         if (result) result.textContent = '로컬 AI가 오른쪽 예시 결과를 작성하는 중입니다.';
         renderDemoShell(prompt);
 
-        const payload = {
-            mode: 'demo',
-            prompt_id: prompt.id || '',
-            title: prompt.title || '',
-            summary: String(prompt.summary || '').slice(0, 600),
-            output_sections: (prompt.outputSections || []).slice(0, 8).map(item => String(item).slice(0, 100)),
-            inputs: compactInputs(getPromptInputs(prompt)),
-            extra_request: (byId('local-ai-extra')?.value || '').trim().slice(0, 700),
-        };
+        const payload = makePayload(prompt);
+        renderAdaptivePromptStructure(prompt, payload);
 
         if (state.status && state.status.state === 'error' && !state.status.ready) {
             renderPreviewResult(prompt, payload);
@@ -245,10 +250,10 @@
         }
 
         try {
-            const res = await fetch('/api/ai/match', {
+            const res = await fetch('/api/ai/demo', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: JSON.stringify(payload), top_k: 1 }),
+                body: JSON.stringify(payload),
             });
             if (res.status === 409) {
                 const data = await res.json();
@@ -297,16 +302,114 @@
         return fallback;
     }
 
+    function inputEntries(inputs, limit) {
+        return Object.entries(inputs || {})
+            .filter(([, value]) => String(value || '').trim())
+            .slice(0, limit || 8);
+    }
+
+    function shortValue(value, max) {
+        const clean = String(value || '').replace(/\s+/g, ' ').trim();
+        const limit = max || 120;
+        return clean.length > limit ? clean.slice(0, limit - 1) + '…' : clean;
+    }
+
+    function getBasePromptText(prompt) {
+        try {
+            if (typeof p_hydratedPrompt === 'function') return p_hydratedPrompt(prompt);
+        } catch {
+            // Fall through to raw prompt.
+        }
+        return String((prompt && prompt.prompt) || '');
+    }
+
+    function setPromptText(text) {
+        const el = byId('p-promptText');
+        if (!el) return;
+        if ('value' in el) el.value = text;
+        else el.textContent = text;
+    }
+
+    function buildAdaptivePromptText(prompt, payload) {
+        const inputs = payload.inputs || {};
+        const dealer = getValue(inputs, ['dealer', '대리점명'], '대리점명 미입력');
+        const region = getValue(inputs, ['region', '담당 지역', '지역'], '지역 미입력');
+        const customers = getValue(inputs, ['customers', '핵심 고객층', '고객층'], '고객층 미입력');
+        const filled = inputEntries(inputs, 9)
+            .filter(([key]) => !['dealer', 'region', 'customers'].includes(key))
+            .map(([key, value]) => `- ${key}: ${shortValue(value, 120)}`)
+            .join('\n') || '- 아직 전용 입력이 비어 있습니다. 비어 있는 값은 결과에서 [수정 필요]로 표시합니다.';
+        const sections = (payload.output_sections || prompt.outputSections || [])
+            .slice(0, 6)
+            .map((item, index) => `${index + 1}. ${item}`)
+            .join('\n') || '1. 바로 실행 가능한 결과 예시';
+        const extra = payload.extra_request ? `\n\n[이번 생성에 추가 반영]\n${payload.extra_request}` : '';
+
+        return `${getBasePromptText(prompt)}
+
+[로컬 AI 현장 반영 구조]
+- 대리점: ${dealer}
+- 담당 지역: ${region}
+- 핵심 고객층: ${customers}
+
+[입력값에 따라 바뀌는 전용 변수]
+${filled}
+
+[결과를 만들 때 반드시 포함할 구조]
+${sections}
+
+[작성 방식]
+- 일반적인 샘플이 아니라 위 대리점의 지역, 고객층, 직원 규모, 채널, KPI에 맞춘 사례로 작성합니다.
+- 고객에게 바로 보낼 수 있는 한국어 문장, 직원이 읽을 수 있는 응대 멘트, 사장님이 볼 수 있는 표를 우선합니다.
+- 입력값이 충분하면 숫자, 일정, 우선순위, 후속 액션까지 구체화합니다.
+- 입력값이 부족하면 결과 안에 [수정 필요] 항목을 남기고 무엇을 채워야 하는지 표시합니다.${extra}`;
+    }
+
+    function renderAdaptivePromptStructure(prompt, payload) {
+        if (!prompt) return;
+        setPromptText(buildAdaptivePromptText(prompt, payload || makePayload(prompt)));
+    }
+
+    function refreshAdaptiveStudio(renderOutput) {
+        const prompt = getCurrentPrompt();
+        if (!prompt) return;
+        const payload = makePayload(prompt);
+        renderAdaptivePromptStructure(prompt, payload);
+        if (renderOutput !== false) renderPreviewResult(prompt, payload);
+    }
+
+    function installAdaptiveStudio() {
+        if (window.__dealerAdaptiveStudioInstalled) return;
+        window.__dealerAdaptiveStudioInstalled = true;
+        const promptView = byId('view-prompt');
+        if (!promptView) return;
+        let timer = null;
+        const schedule = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => refreshAdaptiveStudio(true), 180);
+        };
+        promptView.addEventListener('input', schedule);
+        promptView.addEventListener('click', () => setTimeout(() => refreshAdaptiveStudio(true), 80));
+        setTimeout(() => refreshAdaptiveStudio(true), 120);
+    }
+
     function buildPreviewText(prompt, payload) {
         const inputs = payload.inputs || {};
         const dealer = getValue(inputs, ['dealer', '대리점명'], '○○보일러 강동대리점');
         const region = getValue(inputs, ['region', '지역'], '서울 강동구 고덕동');
+        const customers = getValue(inputs, ['customers', '핵심 고객층', '고객층'], '15년 이상 구축 아파트 거주자');
+        const inputDigest = inputEntries(inputs, 7)
+            .map(([key, value]) => `- ${key}: ${shortValue(value, 95)}`)
+            .join('\n');
+        const extraLine = payload.extra_request ? `\n추가 요청 반영: ${shortValue(payload.extra_request, 150)}\n` : '';
         if (prompt.id === 'competitor') {
             const competitors = getValue(inputs, ['mainCompetitors', '주요 경쟁사'], '○○가스, △△설비');
             const usp = getValue(inputs, ['ourUSP', '우리만의 USP'], '같은 단지 시공 50건 이상, 토요일 방문 가능, 점검 리포트 무료 제공');
             return `대상: ${dealer} / ${region}
+고객층: ${customers}
 
 경쟁사 비교 포인트: ${competitors}
+${extraLine}
 
 | 항목 | 우리 대리점 메시지 | 고객 이점 |
 |---|---|---|
@@ -320,6 +423,8 @@
         if (prompt.id === 'call') {
             const target = getValue(inputs, ['targetCustomer', 'targetCustomers', '대상 고객'], '노후 보일러 사용 고객');
             return `대상: ${region} ${target}
+대리점/고객층: ${dealer} / ${customers}
+${extraLine}
 
 알림톡 초안:
 “안녕하세요, ${dealer}입니다. 최근 온수 지연, 난방 소음, 배관 누수 문의가 늘고 있습니다. 이번 주 ${region} 고객님을 대상으로 무상 안심점검을 진행합니다. 점검은 약 20분이며, 교체 권유보다 현재 상태 확인을 먼저 도와드립니다. 원하시는 방문 시간만 답장해 주세요.”
@@ -331,15 +436,20 @@
         }
         const section = (payload.output_sections || prompt.outputSections || ['실행 예시'])[0];
         return `대상: ${dealer} / ${region}
+고객층: ${customers}
 자료 초점: ${section}
+${extraLine}
+
+입력값 요약:
+${inputDigest || '- 아직 입력값이 부족합니다. 예시 채우기를 누르면 대리점 환경이 더 선명하게 반영됩니다.'}
 
 실전 예시:
-이번 주에는 대상을 넓게 잡기보다 “바로 연락 가능한 고객 20명”만 먼저 뽑습니다. 첫 메시지는 판매보다 점검 중심으로 시작합니다. 예를 들어 “고객님, 이번 안내는 교체 권유가 아니라 겨울 전 안전 확인입니다. 온수 지연, 소음, 누수 흔적 중 하나라도 있으면 사진으로 먼저 확인해 드리겠습니다.”처럼 부담을 낮춥니다.
+이번 주에는 ${customers} 중에서 “바로 연락 가능한 고객 20명”만 먼저 뽑습니다. 첫 메시지는 판매보다 점검 중심으로 시작합니다. 예를 들어 “고객님, 이번 안내는 교체 권유가 아니라 겨울 전 안전 확인입니다. 온수 지연, 소음, 누수 흔적 중 하나라도 있으면 사진으로 먼저 확인해 드리겠습니다.”처럼 부담을 낮춥니다. ${region} 고객에게는 이동 동선과 방문 가능 시간을 먼저 제시하고, 상담 직원은 통화 뒤 CRM에 불편 키워드와 다음 연락일을 남깁니다.
 
 간단 흐름도:
 고객 분류 → 알림톡 발송 → 응답 고객 전화 → 방문 예약 → 점검 결과표 전달 → 리뷰 요청
 
-이번 주 KPI는 응답 8건, 예약 4건, 리뷰 3건으로 작게 잡고 매일 오후 5시에 결과를 기록하세요.`;
+이번 주 KPI는 응답 8건, 예약 4건, 리뷰 3건으로 작게 잡고 매일 오후 5시에 결과를 기록하세요. 결과가 좋으면 다음 주에는 같은 문구를 복사하지 말고, 반응이 높았던 고객층과 지역명을 넣어 알림톡 첫 문장을 바꿉니다.`;
     }
 
     function renderPreviewResult(prompt, payload) {
@@ -389,16 +499,110 @@
         `;
     }
 
+    function injectCalendarAiPanel() {
+        if (byId('calendar-ai-panel')) return;
+        const calendarView = byId('view-calendar');
+        if (!calendarView) return;
+        const panel = document.createElement('section');
+        panel.id = 'calendar-ai-panel';
+        panel.className = 'bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-stone-200 mb-4';
+        panel.innerHTML = `
+            <div class="flex flex-col lg:flex-row lg:items-end gap-3">
+                <div class="flex-grow">
+                    <h3 class="font-bold text-stone-800 mb-2">AI 월간 일정 검색</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-2">
+                        <input id="calendar-ai-query" class="md:col-span-7 border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="예: 보일러 지원사업, 지역 축제, 아파트 입주 일정">
+                        <input id="calendar-ai-region" class="md:col-span-3 border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="지역">
+                        <button id="calendar-ai-search-btn" class="md:col-span-2 px-3 py-2 bg-emerald-600 text-white rounded-md text-sm font-bold hover:bg-emerald-700 disabled:opacity-50">검색 후 등록</button>
+                    </div>
+                    <div id="calendar-ai-result" class="mt-2 text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2 min-h-[36px]">검색어를 입력하면 현재 보고 있는 월에 맞춰 일정 후보를 찾아 등록합니다.</div>
+                </div>
+            </div>
+        `;
+        const firstSection = calendarView.querySelector('section');
+        if (firstSection) firstSection.insertAdjacentElement('afterend', panel);
+        else calendarView.prepend(panel);
+
+        const regionInput = byId('calendar-ai-region');
+        const promptRegion = byId('p-region');
+        if (regionInput && promptRegion && promptRegion.value) regionInput.value = promptRegion.value;
+        byId('calendar-ai-search-btn')?.addEventListener('click', runCalendarAiSearch);
+    }
+
+    function getCalendarCursor() {
+        const now = new Date();
+        let year = now.getFullYear();
+        let month = now.getMonth() + 1;
+        try {
+            if (typeof calYear !== 'undefined') year = calYear;
+            if (typeof calMonth !== 'undefined') month = calMonth + 1;
+        } catch {
+            // Keep current month.
+        }
+        return { year, month };
+    }
+
+    async function runCalendarAiSearch() {
+        const queryInput = byId('calendar-ai-query');
+        const regionInput = byId('calendar-ai-region');
+        const result = byId('calendar-ai-result');
+        const button = byId('calendar-ai-search-btn');
+        const query = (queryInput?.value || '').trim();
+        if (!query) {
+            if (result) result.textContent = '검색할 일정 주제를 입력해 주세요.';
+            return;
+        }
+        const { year, month } = getCalendarCursor();
+        if (button) button.disabled = true;
+        if (result) result.textContent = `${year}년 ${month}월 일정 후보를 검색하고 있습니다.`;
+        try {
+            const res = await fetch('/api/calendar/ai-search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query,
+                    region: (regionInput?.value || '').trim(),
+                    year,
+                    month,
+                    max_results: 5,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'calendar ai search failed');
+            const created = data.created || [];
+            const sourceCount = (data.sources || []).length;
+            if (result) {
+                result.innerHTML = `
+                    <div class="font-semibold text-stone-700">${esc(data.message || '일정을 등록했습니다.')}</div>
+                    <div class="mt-1">${created.length ? created.map(item => `${esc(item.date)} · ${esc(item.title)}`).join('<br>') : '등록된 일정이 없습니다.'}</div>
+                    <div class="mt-1 text-stone-400">검색 결과 ${sourceCount}건 참고${data.search_error ? ' · 검색 연결 실패 시 후보일로 대체' : ''}</div>
+                `;
+            }
+            if (typeof loadCalendar === 'function') await loadCalendar();
+            else if (typeof renderCalendar === 'function') renderCalendar();
+            showToastLocal('AI 검색 일정이 캘린더에 반영되었습니다.');
+        } catch (err) {
+            if (result) result.textContent = `일정 검색 중 오류가 발생했습니다: ${err.message || err}`;
+            showToastLocal('AI 일정 검색에 실패했습니다.');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
     window.DealerDashboardAI = {
         receiveStatus,
         startEngine,
         generateDemo,
+        refreshAdaptiveStudio,
+        runCalendarAiSearch,
     };
 
     document.addEventListener('DOMContentLoaded', () => {
         injectPanel();
+        injectCalendarAiPanel();
         installPreviewRenderer();
-        renderPreviewResult(getCurrentPrompt() || { title: '로컬 AI 예시 결과', outputSections: [] }, { inputs: {} });
+        installAdaptiveStudio();
+        refreshAdaptiveStudio(true);
         startEngine();
     });
 })();
