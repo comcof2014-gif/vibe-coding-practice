@@ -1,0 +1,76 @@
+name: Build dealer-dashboard EXE
+
+run-name: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && format('Merge PR #{0}: dealer-dashboard EXE', github.event.pull_request.number) || github.event_name == 'pull_request' && format('PR #{0}: dealer-dashboard EXE', github.event.pull_request.number) || format('dealer-dashboard EXE: {0}', github.ref_name) }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/dealer-dashboard-ui-Rcx1D
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+    branches:
+      - claude/dealer-dashboard-ui-Rcx1D
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  build-windows-exe:
+    name: Build Windows EXE
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' || github.event.pull_request.merged == true }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Verify banned heavy AI libraries are absent
+        run: |
+          python -c "import importlib.util, sys; banned=['torch','transformers']; found=[p for p in banned if importlib.util.find_spec(p)]; print('Banned packages found:', found); sys.exit(1 if found else 0)"
+
+      - name: Syntax checks
+        run: |
+          python -m py_compile app.py desktop.py ai_engine.py
+          node --check static/local_ai.js
+
+      - name: Build one-file EXE
+        run: |
+          python -m PyInstaller --clean --noconfirm dealer-dashboard.spec
+
+      - name: Verify EXE exists
+        run: |
+          if (!(Test-Path "dist/dealer-dashboard.exe")) {
+            throw "dist/dealer-dashboard.exe was not created"
+          }
+          Get-Item "dist/dealer-dashboard.exe" | Format-List Name,Length,FullName
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dealer-dashboard-windows-exe
+          path: dist/dealer-dashboard.exe
+          if-no-files-found: error
