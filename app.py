@@ -1,8 +1,10 @@
 import json
 import os
+import re
 import sys
 import threading
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
@@ -41,11 +43,27 @@ def get_config_dir() -> Path:
 CONFIG_PATH = get_config_dir() / "config.json"
 _config_lock = threading.Lock()
 
+PRESET_COLORS = [
+    "#0369a1",
+    "#dc2626",
+    "#16a34a",
+    "#ca8a04",
+    "#9333ea",
+    "#db2777",
+    "#0d9488",
+    "#57534e",
+]
+
 DEFAULT_CONFIG = {
     "notification_times": ["09:00", "13:00", "18:00"],
     "notification_message": "오늘 일일 영업·마감 체크리스트를 확인하세요.",
     "shortcuts": [],
+    "calendar": [],
 }
+
+MAX_PER_DAY = 5
+TITLE_MAX_LEN = 12
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def load_config() -> dict:
@@ -120,6 +138,40 @@ class ShortcutIn(BaseModel):
         if not parsed.netloc:
             raise ValueError("url must include a host")
         return v
+
+
+class CalendarEntryIn(BaseModel):
+    date: str
+    title: str
+    color: str = "#0369a1"
+
+    @field_validator("date")
+    @classmethod
+    def _validate_date(cls, v: str) -> str:
+        v = v.strip()
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("date must be YYYY-MM-DD")
+        return v
+
+    @field_validator("title")
+    @classmethod
+    def _validate_title(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("title is required")
+        if len(v) > TITLE_MAX_LEN:
+            raise ValueError(f"title too long (max {TITLE_MAX_LEN} chars)")
+        return v
+
+    @field_validator("color")
+    @classmethod
+    def _validate_color(cls, v: str) -> str:
+        v = v.strip()
+        if not HEX_RE.match(v):
+            raise ValueError("color must be hex like #RRGGBB")
+        return v.lower()
 
 
 class OpenUrlRequest(BaseModel):
@@ -221,6 +273,73 @@ async def api_delete_shortcut(shortcut_id: str):
 async def api_open_url(payload: OpenUrlRequest):
     webbrowser.open(payload.url, new=2)
     return {"status": "ok", "url": payload.url}
+
+
+@app.get("/api/calendar/presets")
+async def api_calendar_presets():
+    return {"colors": PRESET_COLORS, "max_per_day": MAX_PER_DAY, "title_max_len": TITLE_MAX_LEN}
+
+
+@app.get("/api/calendar")
+async def api_list_calendar():
+    return load_config().get("calendar", [])
+
+
+@app.post("/api/calendar")
+async def api_create_calendar(payload: CalendarEntryIn):
+    cfg = load_config()
+    entries = cfg.setdefault("calendar", [])
+    same_day = [e for e in entries if e.get("date") == payload.date]
+    if len(same_day) >= MAX_PER_DAY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"해당 일자에는 최대 {MAX_PER_DAY}개까지만 등록 가능합니다.",
+        )
+    item = {
+        "id": uuid4().hex[:12],
+        "date": payload.date,
+        "title": payload.title,
+        "color": payload.color,
+    }
+    entries.append(item)
+    save_config(cfg)
+    return item
+
+
+@app.put("/api/calendar/{entry_id}")
+async def api_update_calendar(entry_id: str, payload: CalendarEntryIn):
+    cfg = load_config()
+    entries = cfg.get("calendar", [])
+    for entry in entries:
+        if entry.get("id") == entry_id:
+            if entry.get("date") != payload.date:
+                same_day = [
+                    e for e in entries
+                    if e.get("date") == payload.date and e.get("id") != entry_id
+                ]
+                if len(same_day) >= MAX_PER_DAY:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"해당 일자에는 최대 {MAX_PER_DAY}개까지만 등록 가능합니다.",
+                    )
+            entry["date"] = payload.date
+            entry["title"] = payload.title
+            entry["color"] = payload.color
+            save_config(cfg)
+            return entry
+    raise HTTPException(status_code=404, detail="calendar entry not found")
+
+
+@app.delete("/api/calendar/{entry_id}")
+async def api_delete_calendar(entry_id: str):
+    cfg = load_config()
+    entries = cfg.get("calendar", [])
+    before = len(entries)
+    cfg["calendar"] = [e for e in entries if e.get("id") != entry_id]
+    if len(cfg["calendar"]) == before:
+        raise HTTPException(status_code=404, detail="calendar entry not found")
+    save_config(cfg)
+    return {"status": "deleted", "id": entry_id}
 
 
 if __name__ == "__main__":

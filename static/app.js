@@ -151,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
     p_sample();
     p_timer = setInterval(p_tick, 200);
 
+    document.getElementById('tab-calendar').addEventListener('click', (e) => switchTab('calendar', e.currentTarget));
     document.getElementById('tab-daily').addEventListener('click', (e) => switchTab('daily', e.currentTarget));
     document.getElementById('tab-weekly').addEventListener('click', (e) => switchTab('weekly', e.currentTarget));
     document.getElementById('tab-monthly').addEventListener('click', (e) => switchTab('monthly', e.currentTarget));
@@ -221,6 +222,7 @@ function switchTab(tab, element) {
         element.classList.add('active');
     }
 
+    document.getElementById('view-calendar').classList.add('hidden');
     document.getElementById('view-daily').classList.add('hidden');
     document.getElementById('view-weekly').classList.add('hidden');
     document.getElementById('view-monthly').classList.add('hidden');
@@ -231,6 +233,7 @@ function switchTab(tab, element) {
     document.getElementById(`view-${tab}`).classList.add('block');
 
     if (tab === 'shortcut') loadShortcuts();
+    if (tab === 'calendar') loadCalendar();
 }
 
 // --- CUSTOM MODAL SYSTEM ---
@@ -1224,10 +1227,308 @@ async function submitShortcutForm(e) {
     }
 }
 
+// ============================================================
+// CALENDAR (월간 일정)
+// ============================================================
+const CAL_MAX_PER_DAY = 5;
+const CAL_TITLE_MAX = 12;
+let calEntries = [];
+let calPresets = ['#0369a1', '#dc2626', '#16a34a', '#ca8a04', '#9333ea', '#db2777', '#0d9488', '#57534e'];
+let calYear, calMonth;
+
+function ymd(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadCalendar() {
+    if (calYear === undefined) {
+        const now = new Date();
+        calYear = now.getFullYear();
+        calMonth = now.getMonth();
+    }
+    try {
+        const [entriesRes, presetsRes] = await Promise.all([
+            fetch('/api/calendar'),
+            fetch('/api/calendar/presets'),
+        ]);
+        calEntries = entriesRes.ok ? await entriesRes.json() : [];
+        if (presetsRes.ok) {
+            const p = await presetsRes.json();
+            if (Array.isArray(p.colors) && p.colors.length) calPresets = p.colors;
+        }
+    } catch {
+        calEntries = [];
+    }
+    renderCalendar();
+    renderCalLegend();
+}
+
+function renderCalLegend() {
+    const el = document.getElementById('cal-legend');
+    if (!el) return;
+    el.innerHTML = calPresets.map(c => `
+        <span class="inline-flex items-center gap-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background:${c}"></span>
+            <span class="text-stone-500">${c}</span>
+        </span>
+    `).join('');
+}
+
+function renderCalendar() {
+    const grid = document.getElementById('cal-grid');
+    const title = document.getElementById('cal-title');
+    if (!grid || !title) return;
+
+    title.textContent = `${calYear}년 ${calMonth + 1}월`;
+
+    const first = new Date(calYear, calMonth, 1);
+    const firstWeekday = first.getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const daysInPrev = new Date(calYear, calMonth, 0).getDate();
+    const todayKey = ymd(new Date());
+
+    const byDate = {};
+    for (const e of calEntries) {
+        if (!byDate[e.date]) byDate[e.date] = [];
+        byDate[e.date].push(e);
+    }
+
+    const cells = [];
+    for (let i = 0; i < firstWeekday; i++) {
+        const day = daysInPrev - firstWeekday + 1 + i;
+        cells.push({ inMonth: false, day, date: null });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateKey = ymd(new Date(calYear, calMonth, d));
+        cells.push({ inMonth: true, day: d, date: dateKey, weekday: (firstWeekday + d - 1) % 7 });
+    }
+    while (cells.length % 7 !== 0) {
+        const next = cells.length - firstWeekday - daysInMonth + 1;
+        cells.push({ inMonth: false, day: next, date: null });
+    }
+    if (cells.length < 42) {
+        let nx = cells[cells.length - 1].day + 1;
+        while (cells.length < 42) { cells.push({ inMonth: false, day: nx++, date: null }); }
+    }
+
+    grid.innerHTML = cells.map((c, idx) => {
+        const col = idx % 7;
+        const dayColor = !c.inMonth ? 'text-stone-300'
+                        : col === 0 ? 'text-red-500'
+                        : col === 6 ? 'text-blue-500'
+                        : 'text-stone-700';
+        const isToday = c.inMonth && c.date === todayKey;
+        const todayBadge = isToday
+            ? '<span class="ml-1 text-[10px] font-bold bg-sky-600 text-white px-1.5 py-0.5 rounded">오늘</span>'
+            : '';
+        const entries = c.inMonth ? (byDate[c.date] || []) : [];
+        const lines = entries.slice(0, CAL_MAX_PER_DAY).map(e => `
+            <div class="text-[11px] leading-tight truncate rounded px-1 py-0.5 font-semibold text-white" style="background:${escHtml(e.color)}" title="${escHtml(e.title)}">${escHtml(e.title)}</div>
+        `).join('');
+        const dataAttr = c.inMonth ? `data-date="${c.date}"` : '';
+        const interactive = c.inMonth ? 'cursor-pointer hover:bg-sky-50' : 'bg-stone-50/60';
+        const ring = isToday ? 'ring-2 ring-inset ring-sky-500' : '';
+        return `
+            <div class="cal-cell border-r border-b border-stone-200 p-1.5 h-[110px] flex flex-col gap-1 ${interactive} ${ring}" ${dataAttr}>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold ${dayColor}">${c.day}</span>
+                    ${todayBadge}
+                </div>
+                <div class="flex flex-col gap-0.5 overflow-hidden">${lines}</div>
+            </div>
+        `;
+    }).join('');
+
+    grid.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
+        cell.addEventListener('click', () => openCalDayModal(cell.dataset.date));
+    });
+}
+
+function changeMonth(delta) {
+    const d = new Date(calYear, calMonth + delta, 1);
+    calYear = d.getFullYear();
+    calMonth = d.getMonth();
+    renderCalendar();
+}
+
+function gotoToday() {
+    const n = new Date();
+    calYear = n.getFullYear();
+    calMonth = n.getMonth();
+    renderCalendar();
+}
+
+function openCalDayModal(dateKey, editingId = null) {
+    const entries = calEntries.filter(e => e.date === dateKey);
+    const editing = editingId ? entries.find(e => e.id === editingId) : null;
+    const remaining = CAL_MAX_PER_DAY - entries.length + (editing ? 1 : 0);
+    const swatches = calPresets.map(c => `
+        <button type="button" data-color="${c}" class="cal-swatch w-7 h-7 rounded-full border-2 border-white shadow ring-1 ring-stone-200 hover:scale-110 transition-transform" style="background:${c}" title="${c}"></button>
+    `).join('');
+    const listHtml = entries.length === 0
+        ? '<p class="text-xs text-stone-500">등록된 일정이 없습니다.</p>'
+        : entries.map(e => `
+            <div class="flex items-center gap-2 p-2 border border-stone-200 rounded-md bg-stone-50">
+                <span class="inline-block w-4 h-4 rounded-sm shrink-0" style="background:${escHtml(e.color)}"></span>
+                <span class="flex-grow text-sm font-semibold text-stone-800 truncate">${escHtml(e.title)}</span>
+                <button type="button" data-edit="${e.id}" class="cal-edit-btn text-xs px-2 py-1 bg-white text-stone-700 border border-stone-300 rounded hover:bg-stone-100">수정</button>
+                <button type="button" data-del="${e.id}" class="cal-del-btn text-xs px-2 py-1 bg-white text-red-600 border border-red-200 rounded hover:bg-red-50">삭제</button>
+            </div>
+        `).join('');
+
+    const formDisabled = remaining <= 0 ? 'opacity-50 pointer-events-none' : '';
+    const formTitle = editing ? '일정 수정' : '새 일정 추가';
+    const submitLabel = editing ? '수정 저장' : (remaining <= 0 ? '추가 불가 (최대 5개)' : '추가');
+    const presetActive = editing ? editing.color : calPresets[0];
+
+    const dateLabel = (() => {
+        const [y, m, d] = dateKey.split('-').map(Number);
+        const dt = new Date(y, m - 1, d);
+        const wk = ['일','월','화','수','목','금','토'][dt.getDay()];
+        return `${y}년 ${m}월 ${d}일 (${wk})`;
+    })();
+
+    const html = `
+        <div class="flex items-start justify-between mb-3">
+            <div>
+                <h3 class="text-lg font-bold text-stone-800">${dateLabel}</h3>
+                <p class="text-xs text-stone-500 mt-1">최대 ${CAL_MAX_PER_DAY}개 · 현재 ${entries.length}개 등록</p>
+            </div>
+            <button type="button" onclick="closeModal()" class="text-stone-400 hover:text-stone-700 text-xl leading-none">✕</button>
+        </div>
+
+        <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar mb-4">${listHtml}</div>
+
+        <div class="border-t border-stone-200 pt-4 ${formDisabled}">
+            <p class="text-sm font-bold text-stone-700 mb-2">${formTitle}</p>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-stone-600 mb-1">제목 (최대 ${CAL_TITLE_MAX}자)</label>
+                    <input id="cal-title-input" maxlength="${CAL_TITLE_MAX}" value="${editing ? escHtml(editing.title) : ''}" class="w-full border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="예: 방문 점검">
+                    <div class="text-[11px] text-stone-400 mt-0.5"><span id="cal-title-count">0</span>/${CAL_TITLE_MAX}</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-stone-600 mb-1">색상</label>
+                    <div class="flex items-center gap-2 flex-wrap" id="cal-swatches">${swatches}</div>
+                    <input type="hidden" id="cal-color-input" value="${presetActive}">
+                </div>
+            </div>
+            <div id="cal-form-err" class="mt-3 text-xs text-red-600 hidden"></div>
+            <div class="flex justify-end gap-2 mt-4">
+                ${editing ? '<button type="button" id="cal-form-cancel" class="px-4 py-2 bg-stone-100 text-stone-700 rounded text-sm font-semibold hover:bg-stone-200">취소</button>' : ''}
+                <button type="button" id="cal-form-submit" class="px-4 py-2 bg-sky-600 text-white rounded text-sm font-bold hover:bg-sky-700 disabled:opacity-50" ${remaining <= 0 && !editing ? 'disabled' : ''}>${submitLabel}</button>
+            </div>
+        </div>
+    `;
+    Modal.show(html);
+
+    const titleInput = document.getElementById('cal-title-input');
+    const titleCount = document.getElementById('cal-title-count');
+    const colorInput = document.getElementById('cal-color-input');
+    const updateCount = () => { titleCount.textContent = String([...titleInput.value].length); };
+    titleInput.addEventListener('input', updateCount);
+    updateCount();
+
+    const highlightSwatch = (color) => {
+        document.querySelectorAll('.cal-swatch').forEach(s => {
+            s.classList.toggle('ring-sky-600', s.dataset.color === color);
+            s.classList.toggle('ring-2', s.dataset.color === color);
+        });
+    };
+    highlightSwatch(presetActive);
+    document.querySelectorAll('.cal-swatch').forEach(s => {
+        s.addEventListener('click', () => {
+            colorInput.value = s.dataset.color;
+            highlightSwatch(s.dataset.color);
+        });
+    });
+
+    document.querySelectorAll('.cal-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => openCalDayModal(dateKey, btn.dataset.edit));
+    });
+    document.querySelectorAll('.cal-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.dataset.del;
+            const res = await fetch(`/api/calendar/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                calEntries = calEntries.filter(e => e.id !== id);
+                renderCalendar();
+                openCalDayModal(dateKey);
+                showToast('일정이 삭제되었습니다.');
+            }
+        });
+    });
+
+    const cancelBtn = document.getElementById('cal-form-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => openCalDayModal(dateKey));
+
+    const submitBtn = document.getElementById('cal-form-submit');
+    if (submitBtn && !submitBtn.disabled) {
+        submitBtn.addEventListener('click', async () => {
+            const err = document.getElementById('cal-form-err');
+            err.classList.add('hidden');
+            const title = titleInput.value.trim();
+            const color = colorInput.value;
+            if (!title) {
+                err.textContent = '제목을 입력하세요.';
+                err.classList.remove('hidden');
+                return;
+            }
+            if ([...title].length > CAL_TITLE_MAX) {
+                err.textContent = `제목은 ${CAL_TITLE_MAX}자 이내로 입력하세요.`;
+                err.classList.remove('hidden');
+                return;
+            }
+            const payload = { date: dateKey, title, color };
+            try {
+                const opts = {
+                    method: editing ? 'PUT' : 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                };
+                const endpoint = editing ? `/api/calendar/${editing.id}` : '/api/calendar';
+                const res = await fetch(endpoint, opts);
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    const msg = Array.isArray(data.detail) ? data.detail.map(d => d.msg).join(', ') : (data.detail || '저장 실패');
+                    throw new Error(msg);
+                }
+                const saved = await res.json();
+                if (editing) {
+                    calEntries = calEntries.map(e => e.id === editing.id ? saved : e);
+                } else {
+                    calEntries.push(saved);
+                }
+                renderCalendar();
+                openCalDayModal(dateKey);
+                showToast(editing ? '일정이 수정되었습니다.' : '일정이 추가되었습니다.');
+            } catch (ex) {
+                err.textContent = ex.message;
+                err.classList.remove('hidden');
+            }
+        });
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const settingsBtn = document.getElementById('notify-settings-btn');
     if (settingsBtn) settingsBtn.addEventListener('click', openNotifySettingsModal);
     const form = document.getElementById('shortcut-form');
     if (form) form.addEventListener('submit', submitShortcutForm);
     loadNotifySettings();
+
+    const prevBtn = document.getElementById('cal-prev');
+    const nextBtn = document.getElementById('cal-next');
+    const todayBtn = document.getElementById('cal-today');
+    if (prevBtn) prevBtn.addEventListener('click', () => changeMonth(-1));
+    if (nextBtn) nextBtn.addEventListener('click', () => changeMonth(1));
+    if (todayBtn) todayBtn.addEventListener('click', gotoToday);
+    loadCalendar();
 });

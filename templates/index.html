@@ -84,7 +84,10 @@
         </header>
 
         <nav class="flex mb-6 border-b border-stone-300 overflow-x-auto custom-scrollbar">
-            <button id="tab-daily" class="tab-btn active whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg">
+            <button id="tab-calendar" class="tab-btn active whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg">
+                📅 캘린더
+            </button>
+            <button id="tab-daily" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg">
                 ⏰ 일일 영업·마감
             </button>
             <button id="tab-weekly" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg">
@@ -101,8 +104,46 @@
             </button>
         </nav>
 
+        <!-- VIEW 0: CALENDAR -->
+        <main id="view-calendar" class="space-y-6 block">
+            <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-1">📅 월간 일정 캘린더</h2>
+                        <p class="text-stone-600 text-sm">날짜를 클릭하면 일정을 추가/수정/삭제할 수 있습니다. 한 날짜에 최대 5개, 제목은 12자 이내로 작성하세요.</p>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button id="cal-prev" class="px-3 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-md text-sm font-bold hover:bg-stone-200 transition-colors">◀</button>
+                        <div id="cal-title" class="px-4 py-2 text-base font-bold text-stone-800 min-w-[140px] text-center">—</div>
+                        <button id="cal-next" class="px-3 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-md text-sm font-bold hover:bg-stone-200 transition-colors">▶</button>
+                        <button id="cal-today" class="ml-2 px-3 py-2 bg-sky-50 text-sky-700 border border-sky-200 rounded-md text-sm font-bold hover:bg-sky-100 transition-colors">오늘</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden">
+                <div class="grid grid-cols-7 bg-stone-50 border-b border-stone-200 text-xs font-bold text-stone-600">
+                    <div class="px-2 py-2 text-center text-red-500">일</div>
+                    <div class="px-2 py-2 text-center">월</div>
+                    <div class="px-2 py-2 text-center">화</div>
+                    <div class="px-2 py-2 text-center">수</div>
+                    <div class="px-2 py-2 text-center">목</div>
+                    <div class="px-2 py-2 text-center">금</div>
+                    <div class="px-2 py-2 text-center text-blue-500">토</div>
+                </div>
+                <div id="cal-grid" class="grid grid-cols-7"></div>
+            </section>
+
+            <section class="bg-white p-4 rounded-xl shadow-sm border border-stone-200">
+                <div class="text-xs text-stone-500 flex flex-wrap gap-x-4 gap-y-1 items-center">
+                    <span class="font-semibold text-stone-700">색상 안내:</span>
+                    <span id="cal-legend" class="flex flex-wrap gap-2"></span>
+                </div>
+            </section>
+        </main>
+
         <!-- VIEW 1: DAILY -->
-        <main id="view-daily" class="space-y-6 block">
+        <main id="view-daily" class="space-y-6 hidden">
             <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200 mb-6">
                 <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                     <div>
