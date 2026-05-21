@@ -12,7 +12,9 @@ hiddenimports = [
     "fastapi",
     "jinja2",
     "llama_cpp",
+    "llama_cpp._ctypes_extensions",
     "llama_cpp.llama_cpp",
+    "llama_cpp.llama_chat_format",
     "PIL",
     "PIL.Image",
     "PIL.ImageDraw",
@@ -33,7 +35,8 @@ datas = [
 datas += collect_data_files("llama_cpp")
 
 binaries = []
-binaries += collect_dynamic_libs("llama_cpp")
+for src, _dest in collect_dynamic_libs("llama_cpp"):
+    binaries.append((src, "llama_cpp/lib"))
 
 a = Analysis(
     ["desktop.py"],
@@ -44,7 +47,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["torch", "transformers"],
+    excludes=["torch", "transformers", "onnxruntime", "tokenizers"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
