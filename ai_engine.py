@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -110,6 +111,9 @@ class LocalAIManager:
                 "inputs": {"요청": text.strip()},
                 "extra_request": "",
             }
+        status = self.status()
+        if status.get("state") == "error" and not status.get("ready"):
+            return self.preview_demo(**payload)
         return self.compose_demo(**payload)
 
     def compose_demo(
@@ -158,6 +162,32 @@ class LocalAIManager:
             }
         finally:
             self._set_status(state="ready", ready=True, progress=100, phase="로컬 AI 준비 완료")
+
+    def preview_demo(
+        self,
+        prompt_id: str = "",
+        title: str = "",
+        summary: str = "",
+        output_sections: list[str] | None = None,
+        inputs: dict[str, Any] | None = None,
+        extra_request: str = "",
+    ) -> dict[str, Any]:
+        payload = self._normalize_payload(
+            prompt_id=prompt_id,
+            title=title,
+            summary=summary,
+            output_sections=output_sections or [],
+            inputs=inputs or {},
+            extra_request=extra_request,
+        )
+        return {
+            "status": "fallback",
+            "mode": "local-preview-after-ai-error",
+            "model": MODEL_REPO,
+            "model_file": MODEL_FILE,
+            "text": self._fallback_demo(payload),
+            "error": self.status().get("error"),
+        }
 
     def _initialize(self) -> None:
         try:
@@ -218,7 +248,14 @@ class LocalAIManager:
 
     def _load_engine(self) -> None:
         self._set_status(progress=82, phase="llama.cpp 로컬 런타임 로딩")
-        from llama_cpp import Llama
+        self._prepare_llama_runtime_env()
+        try:
+            from llama_cpp import Llama
+        except Exception as exc:
+            raise RuntimeError(
+                "llama-cpp-python 로딩 실패: EXE에 llama.cpp 네이티브 DLL이 포함되지 않았거나 "
+                f"현재 PC에서 로드할 수 없습니다. 원인: {exc}"
+            ) from exc
 
         threads = max(1, min(6, os.cpu_count() or 4))
         kwargs = {
@@ -232,9 +269,43 @@ class LocalAIManager:
         try:
             self._llm = Llama(**kwargs)
         except TypeError:
-            kwargs.pop("n_batch", None)
-            self._llm = Llama(**kwargs)
+            try:
+                kwargs.pop("n_batch", None)
+                self._llm = Llama(**kwargs)
+            except Exception as exc:
+                raise RuntimeError(f"SmolLM2 GGUF 모델 로딩 실패: {exc}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"SmolLM2 GGUF 모델 로딩 실패: {exc}") from exc
         self._set_status(progress=94, phase="SmolLM2 로컬 생성 엔진 준비")
+
+    def _prepare_llama_runtime_env(self) -> None:
+        roots = [Path(__file__).resolve().parent]
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            roots.append(Path(sys._MEIPASS))
+
+        candidates: list[Path] = []
+        for root in roots:
+            candidates.extend(
+                [
+                    root,
+                    root / "llama_cpp",
+                    root / "llama_cpp" / "lib",
+                    root / "llama_cpp" / "lib" / "cpu",
+                ]
+            )
+
+        for directory in candidates:
+            if not directory.exists():
+                continue
+            if os.name == "nt" and hasattr(os, "add_dll_directory"):
+                try:
+                    os.add_dll_directory(str(directory))
+                except OSError:
+                    pass
+            current = os.environ.get("PATH", "")
+            path_text = str(directory)
+            if path_text not in current.split(os.pathsep):
+                os.environ["PATH"] = path_text + os.pathsep + current
 
     def _generate_text(self, payload: dict[str, Any]) -> str:
         if self._llm is None:
@@ -320,29 +391,114 @@ class LocalAIManager:
         return text.strip()
 
     def _fallback_demo(self, payload: dict[str, Any]) -> str:
-        title = payload["title"] or "로컬 AI 예시 결과"
-        lines = [
-            f"# {title}",
-            "",
-            "## 핵심 요약",
-            f"- {payload['summary'] or '선택한 프롬프트 기준으로 실행 가능한 예시 결과를 작성했습니다.'}",
-            "- 입력값이 부족한 항목은 소규모 대리점 기준으로 가정했습니다.",
-            "",
-            "## 입력 반영",
-        ]
-        for key, value in payload["inputs"].items():
-            lines.append(f"- {key}: {value}")
-        lines += ["", "## 결과 구성"]
-        for section in payload["output_sections"] or ["이번 주 액션", "고객 안내 문구", "관리 체크리스트"]:
-            lines.append(f"- {section}: 바로 실행할 수 있는 짧은 표와 문구로 정리")
-        lines += [
-            "",
-            "## 이번 주 액션",
-            "1. 입력 정보 중 비어 있는 항목을 먼저 채웁니다.",
-            "2. 우선 고객군을 10명 단위로 나누고 연락 문구를 적용합니다.",
-            "3. 실행 후 예약, 응답, 리뷰 지표를 매일 기록합니다.",
-        ]
-        return "\n".join(lines)
+        prompt_id = payload.get("prompt_id") or ""
+        if prompt_id == "competitor":
+            return self._fallback_competitor(payload)
+        if prompt_id == "call":
+            return self._fallback_call(payload)
+        if prompt_id == "db":
+            return self._fallback_db(payload)
+        return self._fallback_general(payload)
+
+    def _input(self, payload: dict[str, Any], *keys: str, default: str = "") -> str:
+        inputs = payload.get("inputs") or {}
+        for key in keys:
+            value = inputs.get(key)
+            if value:
+                return str(value).strip()
+        return default
+
+    def _dealer_region(self, payload: dict[str, Any]) -> tuple[str, str]:
+        dealer = self._input(payload, "dealer", "대리점명", default="○○보일러 강동대리점")
+        region = self._input(payload, "region", "지역", default="서울 강동구 고덕동")
+        return dealer, region
+
+    def _fallback_competitor(self, payload: dict[str, Any]) -> str:
+        dealer, region = self._dealer_region(payload)
+        competitors = self._input(payload, "mainCompetitors", "주요 경쟁사", default="○○가스, △△설비")
+        usp = self._input(payload, "ourUSP", "우리만의 USP", default="같은 단지 시공 50건 이상, 토요일 방문 가능, 점검 리포트 무료 제공")
+        return f"""# 경쟁사 차별화 포지셔닝 예시
+
+대상: {dealer} / {region}
+비교 대상: {competitors}
+
+| 비교 항목 | 우리 대리점 메시지 | 고객에게 보이는 이점 |
+|---|---|---|
+| 현장 경험 | {usp.splitlines()[0] if usp else '인근 단지 시공 경험 보유'} | 집 구조를 이미 이해하고 방문 시간이 짧습니다 |
+| 사후관리 | 점검 리포트와 다음 점검일을 남깁니다 | AS 이후에도 관리받는 느낌을 줍니다 |
+| 상담 톤 | 가격 압박보다 안전·온수·소음 문제를 먼저 확인합니다 | 무리한 판매가 아니라 문제 해결로 느껴집니다 |
+
+고객 응대 30초 스크립트:
+“고객님, 다른 곳도 비교해 보시는 게 당연합니다. 다만 보일러는 설치 당일 가격보다 설치 후 온수 안정, 배관 정리, 재방문 대응이 더 오래 남습니다. 저희는 {region}에서 실제 방문 경험을 기준으로 먼저 점검하고, 필요한 경우에만 교체를 권합니다. 오늘은 비용보다 현재 증상과 위험 여부를 먼저 확인해 드리겠습니다.”
+
+이번 주 실행: 기존 시공 고객 20명에게 ‘무료 상태 점검 + 비교 견적 검토’ 안내를 보내고, 상담 시 경쟁사를 낮추지 말고 우리 기준표를 보여주세요."""
+
+    def _fallback_call(self, payload: dict[str, Any]) -> str:
+        dealer, region = self._dealer_region(payload)
+        target = self._input(payload, "targetCustomer", "targetCustomers", "대상 고객", default="노후 보일러 사용 고객")
+        offer = self._input(payload, "offer", "제안 내용", default="무상 안심점검")
+        return f"""# 알림톡·해피콜 예시
+
+대상: {region} {target}
+목표: {offer} 예약 전환
+
+알림톡 초안:
+“안녕하세요, {dealer}입니다. 최근 일교차가 커지면서 온수 지연, 난방 소음, 배관 누수 문의가 늘고 있습니다. 이번 주 {region} 고객님을 대상으로 {offer}을 진행합니다. 점검은 약 20분이며, 교체 권유보다 현재 상태 확인을 먼저 도와드립니다. 원하시는 방문 시간만 답장해 주세요.”
+
+전화 첫 멘트:
+“고객님, 판매 전화가 아니라 기존 보일러 상태 확인 안내로 연락드렸습니다. 요즘 온수가 늦게 나오거나 소음이 늘어난 적 있으실까요?”
+
+거절 대응:
+“네, 괜찮습니다. 대신 겨울 전에는 배기통과 누수 흔적만 한 번 확인해 주세요. 필요하시면 사진으로 먼저 봐드리겠습니다.”
+
+관리표: 발송 50명 → 응답 10명 → 예약 5명 → 점검 완료 4명을 이번 주 기준 KPI로 잡습니다."""
+
+    def _fallback_db(self, payload: dict[str, Any]) -> str:
+        dealer, region = self._dealer_region(payload)
+        customer_source = self._input(payload, "customerSource", "고객 데이터", default="최근 3년 설치·AS 고객")
+        return f"""# 고객 DB 분류표 예시
+
+대상 데이터: {customer_source}
+대리점: {dealer} / {region}
+
+| 등급 | 조건 | 이번 주 액션 | 메시지 |
+|---|---|---|---|
+| A | 설치 7년 이상, AS 1회 이상 | 전화 우선 | “겨울 전 안전점검 대상입니다” |
+| B | 설치 4~6년, 문의 이력 있음 | 알림톡 | “온수·소음 증상 체크표를 보내드립니다” |
+| C | 신규 설치 1~3년 | 리뷰 요청 | “사용 불편이 없으셨는지 확인드립니다” |
+
+예시 운영:
+월요일에는 A등급 20명에게 전화하고, 화요일에는 B등급 40명에게 알림톡을 보냅니다. 금요일에는 응답 고객만 모아 토요일 방문 동선을 짭니다. 무작정 전체 발송하지 말고 ‘노후도 → 문제 이력 → 방문 가능성’ 순서로 좁히면 직원 한 명도 충분히 관리할 수 있습니다.
+
+이번 주 목표: A등급 예약 5건, B등급 응답 8건, C등급 리뷰 5건."""
+
+    def _fallback_general(self, payload: dict[str, Any]) -> str:
+        dealer, region = self._dealer_region(payload)
+        title = payload.get("title") or "로컬 AI 예시 결과"
+        section = (payload.get("output_sections") or ["실행 예시"])[0]
+        summary = payload.get("summary") or "현재 입력값을 바탕으로 실행 가능한 대리점 운영 자료를 만듭니다."
+        inputs = payload.get("inputs") or {}
+        input_lines = "\n".join(f"- {k}: {v}" for k, v in list(inputs.items())[:5])
+        if not input_lines:
+            input_lines = "- 입력값이 부족하여 소규모 대리점 기준으로 가정했습니다."
+        return f"""# {title}
+
+자료 초점: {section}
+대상: {dealer} / {region}
+
+핵심 요약:
+{summary}
+
+입력 반영:
+{input_lines}
+
+실전 예시:
+이번 주에는 대상을 넓게 잡기보다 “바로 연락 가능한 고객 20명”만 먼저 뽑습니다. 첫 메시지는 판매보다 점검 중심으로 시작합니다. 예를 들어 “고객님, 이번 안내는 교체 권유가 아니라 겨울 전 안전 확인입니다. 온수 지연, 소음, 누수 흔적 중 하나라도 있으면 사진으로 먼저 확인해 드리겠습니다.”처럼 부담을 낮춥니다.
+
+간단 흐름도:
+고객 분류 → 알림톡 발송 → 응답 고객 전화 → 방문 예약 → 점검 결과표 전달 → 리뷰 요청
+
+이번 주 KPI는 응답 8건, 예약 4건, 리뷰 3건으로 작게 잡고 매일 오후 5시에 결과를 기록하세요."""
 
     def _parse_demo_payload(self, text: str) -> dict[str, Any] | None:
         try:
