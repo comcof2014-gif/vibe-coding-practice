@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>대리점장 통합 관리 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 30vh;
+            min-height: 250px;
+            max-height: 350px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f5f5f4;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d6d3d1;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #a8a29e;
+        }
+
+        .tab-btn {
+            border-bottom: 2px solid transparent;
+        }
+        .tab-btn.active {
+            border-bottom: 2px solid #0369a1;
+            color: #0369a1;
+            font-weight: 600;
+        }
+
+        .month-btn.active {
+            background-color: #0369a1;
+            color: white;
+        }
+
+        .prompt-tab-btn.active {
+            background-color: #f0f9ff; /* sky-50 */
+            color: #0369a1; /* sky-700 */
+            border-color: #bae6fd; /* sky-200 */
+            font-weight: 700;
+        }
+
+        .progress-bar-inner {
+            transition: width 0.2s linear;
+        }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-800 font-sans antialiased min-h-screen">
+
+    <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="mb-8 text-center sm:text-left flex flex-col sm:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-stone-900 mb-2">&#128202; 대리점장 통합 관리 대시보드</h1>
+                <p class="text-sm text-stone-500">영업 통제부터 AI 활용 실무 스크립트 제작까지, 완벽한 통제를 위한 시스템</p>
+            </div>
+            <div class="mt-4 sm:mt-0 text-right">
+                <div class="text-sm font-medium text-stone-500" id="current-date"></div>
+                <div class="text-lg font-bold text-sky-700">영업 마인드 리셋: "비수기도 성수기다"</div>
+            </div>
+        </header>
+
+        <nav class="flex mb-6 border-b border-stone-300 overflow-x-auto custom-scrollbar">
+            <button id="tab-daily" class="tab-btn active whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg">
+                ⏰ 일일 영업·마감
+            </button>
+            <button id="tab-weekly" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg">
+                📅 주간 체크리스트
+            </button>
+            <button id="tab-monthly" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg">
+                📆 비성수기 120일 플랜
+            </button>
+            <button id="tab-prompt" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg flex items-center">
+                <span class="mr-2">&#129302;</span> AI 프롬프트 스튜디오 <span class="ml-2 text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-bold">NEW</span>
+            </button>
+            <button id="tab-shortcut" class="tab-btn whitespace-nowrap px-6 py-3 text-stone-600 hover:text-sky-700 transition-colors focus:outline-none text-lg flex items-center">
+                <span class="mr-2">&#128279;</span> 바로가기
+            </button>
+        </nav>
+
+        <!-- VIEW 1: DAILY -->
+        <main id="view-daily" class="space-y-6 block">
+            <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200 mb-6">
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-2">오늘의 현장 통제</h2>
+                        <p class="text-stone-600 text-sm">시간대별 영업 준비부터 최종 마감까지의 루틴입니다. 각 항목을 완료할 때마다 체크하여 오늘의 달성률을 100%로 만드십시오.</p>
+                    </div>
+                    <button id="notify-settings-btn" class="shrink-0 px-4 py-2 bg-sky-50 text-sky-700 border border-sky-200 rounded-md text-sm font-bold hover:bg-sky-100 transition-colors">⏰ 알림 시각 설정</button>
+                </div>
+                <div class="mt-3 text-xs text-stone-500" id="notify-times-summary">알림 시각을 불러오는 중…</div>
+            </section>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col h-[600px]">
+                    <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex justify-between items-center">
+                        <h3 class="font-bold text-stone-700">시간대별 마감 체크리스트</h3>
+                        <span id="daily-counter" class="text-sm font-semibold text-sky-600 bg-sky-50 px-3 py-1 rounded-full border border-sky-100">0 / 0 완료</span>
+                    </div>
+                    <div class="p-4 flex-grow overflow-y-auto custom-scrollbar" id="daily-checklist-container">
+                    </div>
+                </div>
+
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-stone-200 flex flex-col justify-center items-center h-[600px]">
+                    <h3 class="font-bold text-stone-700 mb-6 text-center w-full border-b border-stone-100 pb-2">금일 실행 달성률</h3>
+
+                    <div class="chart-container relative">
+                        <canvas id="dailyProgressChart"></canvas>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-4">
+                            <span id="chart-percentage" class="text-3xl font-bold text-stone-800">0%</span>
+                            <span class="text-xs text-stone-500">완료됨</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-8 text-sm text-stone-600 bg-stone-50 p-4 rounded-lg w-full border border-stone-100">
+                        <p class="font-semibold mb-1 text-sky-800">&#128161; 오늘의 점장 포인트</p>
+                        <p>고객 방문 시 첫인상(클린 CS)과 현장 즉각 리워드(리뷰 락인)가 가장 중요합니다. 미결정 고객은 퇴근 전 반드시 리마인드 콜을 진행하세요.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- VIEW 2: MONTHLY -->
+        <main id="view-monthly" class="space-y-6 hidden">
+            <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200 mb-6">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-2">비성수기 120일 마스터 플랜</h2>
+                        <p class="text-stone-600 text-sm">5월부터 8월까지 이어지는 비수기 극복 전략입니다. 농사지을 밭을 고르는 준비 단계부터 겨울 성수기 예약을 확정 짓는 수확 단계까지 월별 핵심 과제를 실행하십시오.</p>
+                    </div>
+                </div>
+            </section>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-stone-200 h-[600px] flex flex-col">
+                    <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex space-x-2 overflow-x-auto custom-scrollbar" id="month-selectors">
+                        <button data-month="5" class="month-btn active px-4 py-2 rounded-md text-sm font-semibold transition-colors focus:outline-none whitespace-nowrap">5월 (준비)</button>
+                        <button data-month="6" class="month-btn bg-stone-200 text-stone-600 hover:bg-stone-300 px-4 py-2 rounded-md text-sm font-semibold transition-colors focus:outline-none whitespace-nowrap">6월 (구축)</button>
+                        <button data-month="7" class="month-btn bg-stone-200 text-stone-600 hover:bg-stone-300 px-4 py-2 rounded-md text-sm font-semibold transition-colors focus:outline-none whitespace-nowrap">7월 (방문)</button>
+                        <button data-month="8" class="month-btn bg-stone-200 text-stone-600 hover:bg-stone-300 px-4 py-2 rounded-md text-sm font-semibold transition-colors focus:outline-none whitespace-nowrap">8월 (수확)</button>
+                    </div>
+                    <div class="p-6 flex-grow overflow-y-auto custom-scrollbar" id="monthly-content-container">
+                    </div>
+                </div>
+
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-stone-200 flex flex-col justify-center h-[600px]">
+                    <h3 class="font-bold text-stone-700 mb-4 text-center border-b border-stone-100 pb-2">시즌 누적 퍼포먼스 예측</h3>
+                    <p class="text-xs text-stone-500 mb-4 text-center">각 월별 마케팅/현장 실행에 따른 예상 성과</p>
+                    <div class="chart-container">
+                        <canvas id="monthlyTrendChart"></canvas>
+                    </div>
+                    <div class="mt-6 text-sm text-stone-600 bg-sky-50 p-4 rounded-lg w-full border border-sky-100">
+                        <ul class="list-disc pl-4 space-y-1 text-xs">
+                            <li><span class="font-semibold">5월:</span> 타겟 추출 및 클린 CS 준비</li>
+                            <li><span class="font-semibold">6월:</span> 홍보 시작 및 알림톡 발송</li>
+                            <li><span class="font-semibold">7월:</span> 리뷰 이벤트 및 안심점검 집중</li>
+                            <li><span class="font-semibold text-sky-700">8월:</span> 겨울 성수기 사전예약 락인 완수</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- VIEW 3: WEEKLY -->
+        <main id="view-weekly" class="space-y-6 hidden">
+            <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200 mb-6">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-2">주간 반복 루틴 8대 체크리스트</h2>
+                        <p class="text-stone-600 text-sm">월요일부터 토요일까지 이어지는 주간 영업 사이클입니다. 각 요일별 목표를 달성하고, 항목을 추가/수정하여 대리점만의 완벽한 루틴을 만드십시오.</p>
+                    </div>
+                </div>
+            </section>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col h-[600px]">
+                    <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex justify-between items-center">
+                        <h3 class="font-bold text-stone-700">요일별 실천 과제</h3>
+                        <span id="weekly-counter" class="text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">0 / 0 완료</span>
+                    </div>
+                    <div class="p-4 flex-grow overflow-y-auto custom-scrollbar" id="weekly-checklist-container">
+                    </div>
+                </div>
+
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-stone-200 flex flex-col justify-center items-center h-[600px]">
+                    <h3 class="font-bold text-stone-700 mb-6 text-center w-full border-b border-stone-100 pb-2">주간 실행 달성률</h3>
+
+                    <div class="chart-container relative">
+                        <canvas id="weeklyProgressChart"></canvas>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-4">
+                            <span id="weekly-chart-percentage" class="text-3xl font-bold text-stone-800">0%</span>
+                            <span class="text-xs text-stone-500">이번 주 완료</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-8 text-sm text-stone-600 bg-emerald-50 p-4 rounded-lg w-full border border-emerald-100">
+                        <p class="font-semibold mb-1 text-emerald-800">&#128204; 주간 포커스</p>
+                        <p>평일은 방문 점검과 씨앗 뿌리기(리뷰/제안)에 집중하고, 주말은 맞벌이/1인가구를 노려 실질적인 세트 판매를 클로징하세요.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- VIEW 4: PROMPT STUDIO -->
+        <main id="view-prompt" class="space-y-6 hidden">
+            <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-2">AI 프롬프트 롤링 스튜디오</h2>
+                        <p class="text-stone-600 text-sm">대리점 사장님이 현장 정보만 입력하면, 9가지 영업 프롬프트와 맞춤형 예시 결과가 즉시 롤링되며 생성됩니다.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button id="p-pauseBtn" class="px-3 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-md text-sm font-semibold hover:bg-stone-200 transition-colors">⏸ 롤링 일시정지</button>
+                        <button id="p-copyAllBtn" class="px-3 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-md text-sm font-semibold hover:bg-stone-200 transition-colors">전체 프롬프트 복사</button>
+                        <button id="p-sampleBtnTop" class="px-4 py-2 bg-sky-600 text-white rounded-md text-sm font-bold hover:bg-sky-700 shadow-sm transition-colors">예시 채우기</button>
+                    </div>
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2 text-xs font-bold text-sky-800">
+                    <span class="bg-sky-100 px-3 py-1 rounded-full border border-sky-200">자동 롤링 카드</span>
+                    <span class="bg-sky-100 px-3 py-1 rounded-full border border-sky-200">원클릭 복사</span>
+                    <span class="bg-stone-100 text-stone-600 px-3 py-1 rounded-full border border-stone-200">GPT API 연동 미구현 (정적 데모)</span>
+                </div>
+            </section>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto lg:h-[750px]">
+
+                <!-- Prompt Column 1: Inputs -->
+                <aside class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col h-[600px] lg:h-full">
+                    <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex justify-between items-center">
+                        <h3 class="font-bold text-stone-800">1. 현장정보 입력</h3>
+                    </div>
+                    <div class="p-4 flex-grow overflow-y-auto custom-scrollbar space-y-4 text-sm">
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">대리점명</label>
+                            <input id="p-dealer" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: ○○보일러 강동대리점">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">담당 지역</label>
+                            <input id="p-region" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: 서울 강동구 고덕동, 명일동">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">주요 고객층</label>
+                            <textarea id="p-customers" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: 15년 이상 구축 아파트 거주자"></textarea>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">주요 주거 형태</label>
+                            <input id="p-housing" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: 구축 아파트와 빌라">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">자주 나오는 현장 문제</label>
+                            <textarea id="p-issues" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="온수 지연, 난방 편차, 소음 등"></textarea>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">최근 고객이 많이 하는 말</label>
+                            <textarea id="p-quotes" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="아직 고장은 안 났어요 등"></textarea>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">우리 대리점의 강점</label>
+                            <textarea id="p-strengths" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="같은 단지 시공 경험, 토요일 방문 등"></textarea>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">보유 장비 및 서비스</label>
+                            <textarea id="p-equipment" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="공기질 측정기 있음 등"></textarea>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">이번 달 목표</label>
+                            <input id="p-goals" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="무상점검 50건, 예약 15건 등">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block font-bold text-stone-700 text-xs">꼭 넣고 싶은 현장 이야기</label>
+                            <textarea id="p-story" class="w-full border border-stone-300 rounded-md p-2 h-20 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="작년 겨울 문의가 많았던 단지 등"></textarea>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-stone-100 bg-stone-50 rounded-b-xl grid grid-cols-2 gap-2">
+                        <button id="p-clearBtn" class="py-2 bg-white text-stone-700 border border-stone-300 rounded-md text-sm font-semibold hover:bg-stone-50 transition-colors">초기화</button>
+                        <button id="p-generateBtn" class="py-2 bg-stone-800 text-white rounded-md text-sm font-semibold hover:bg-stone-900 transition-colors">수동 업데이트</button>
+                    </div>
+                </aside>
+
+                <!-- Prompt Column 2: Carousel -->
+                <section class="lg:col-span-5 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col h-[600px] lg:h-full relative overflow-hidden" id="p-carouselPanel">
+                    <div class="p-4 border-b border-stone-100 bg-stone-50">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-bold text-stone-800">2. 9개 프롬프트 롤링</h3>
+                            <span id="p-counter" class="text-xs font-bold text-stone-500">1 / 9</span>
+                        </div>
+                        <div class="flex gap-2 overflow-x-auto custom-scrollbar pb-2" id="p-tabs">
+                        </div>
+                    </div>
+
+                    <div class="flex-grow flex flex-col p-4 overflow-hidden bg-stone-100/50">
+                        <div class="flex-grow bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden flex flex-col relative">
+                            <div class="p-5 border-b border-stone-100 bg-gradient-to-br from-white to-sky-50">
+                                <span id="p-promptTag" class="inline-block px-2 py-1 bg-orange-100 text-orange-800 text-xs font-bold rounded-md mb-2">태그</span>
+                                <h4 id="p-promptTitle" class="text-xl font-bold text-stone-900 mb-1 leading-tight">프롬프트 제목</h4>
+                                <p id="p-promptSummary" class="text-sm text-stone-600 line-clamp-2">프롬프트 요약 설명입니다.</p>
+                            </div>
+                            <div class="p-0 flex-grow overflow-hidden relative">
+                                <pre id="p-promptText" class="absolute inset-0 p-5 overflow-y-auto custom-scrollbar whitespace-pre-wrap font-mono text-xs sm:text-sm text-stone-800 leading-relaxed"></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-stone-100 bg-white flex items-center justify-between gap-4">
+                        <div class="flex gap-2">
+                            <button id="p-prevBtn" class="px-3 py-1.5 bg-stone-100 text-stone-700 rounded hover:bg-stone-200 text-sm font-semibold transition-colors">&#8592; 이전</button>
+                            <button id="p-nextBtn" class="px-3 py-1.5 bg-stone-100 text-stone-700 rounded hover:bg-stone-200 text-sm font-semibold transition-colors">다음 &#8594;</button>
+                        </div>
+                        <div class="flex-grow h-2 bg-stone-200 rounded-full overflow-hidden">
+                            <div id="p-bar" class="h-full bg-sky-500 progress-bar-inner w-0 rounded-full"></div>
+                        </div>
+                        <button id="p-copyCurrentBtn" class="px-4 py-1.5 bg-sky-100 text-sky-800 border border-sky-200 rounded hover:bg-sky-200 text-sm font-bold transition-colors">현재 복사</button>
+                    </div>
+                </section>
+
+                <!-- Prompt Column 3: Output -->
+                <section class="lg:col-span-4 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col h-[600px] lg:h-full">
+                    <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex justify-between items-center">
+                        <h3 class="font-bold text-stone-800">3. 자동 적용 예시 결과</h3>
+                        <button id="p-copyOutputBtn" class="px-3 py-1 bg-stone-200 text-stone-700 text-xs font-bold rounded hover:bg-stone-300 transition-colors">결과 복사</button>
+                    </div>
+                    <div class="p-4 bg-stone-100/50 border-b border-stone-200 text-xs text-stone-600">
+                        <div class="flex items-center gap-2 mb-1 text-stone-800 font-semibold">
+                            <span class="inline-block w-2 h-2 rounded-full bg-orange-400"></span> 정적 데모 모드 작동 중
+                        </div>
+                        입력된 현장 정보를 바탕으로 생성된 템플릿 예시입니다.
+                    </div>
+                    <div class="flex-grow p-0 overflow-hidden relative bg-white rounded-b-xl">
+                        <div id="p-outputText" class="absolute inset-0 p-5 overflow-y-auto custom-scrollbar font-sans text-sm text-stone-800 leading-relaxed"></div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+
+        <!-- VIEW 5: SHORTCUTS -->
+        <main id="view-shortcut" class="space-y-6 hidden">
+            <section class="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-stone-800 mb-2">사이트 바로가기</h2>
+                        <p class="text-stone-600 text-sm">자주 쓰는 업무 사이트의 이름과 주소를 등록하면 한 번의 클릭으로 기본 브라우저에서 즉시 열립니다.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white rounded-xl shadow-sm border border-stone-200">
+                <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl">
+                    <h3 class="font-bold text-stone-700">새 바로가기 추가</h3>
+                </div>
+                <form id="shortcut-form" class="p-4 grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-bold text-stone-600 mb-1">버튼 이름</label>
+                        <input id="shortcut-name" maxlength="60" class="w-full border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="예: 본사 ERP" required>
+                    </div>
+                    <div class="md:col-span-7">
+                        <label class="block text-xs font-bold text-stone-600 mb-1">사이트 URL (https:// 포함)</label>
+                        <input id="shortcut-url" type="url" class="w-full border border-stone-300 rounded-md p-2 text-sm focus:ring-2 focus:ring-sky-500 outline-none" placeholder="https://example.com" required>
+                    </div>
+                    <div class="md:col-span-2">
+                        <button type="submit" id="shortcut-submit" class="w-full py-2 bg-sky-600 text-white rounded-md text-sm font-bold hover:bg-sky-700 transition-colors">추가</button>
+                    </div>
+                </form>
+                <div id="shortcut-form-error" class="px-4 pb-3 text-xs text-red-600 hidden"></div>
+            </section>
+
+            <section class="bg-white rounded-xl shadow-sm border border-stone-200">
+                <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex justify-between items-center">
+                    <h3 class="font-bold text-stone-700">등록된 바로가기</h3>
+                    <span id="shortcut-count" class="text-xs font-semibold text-stone-500">0개</span>
+                </div>
+                <div id="shortcut-grid" class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 min-h-[200px]">
+                </div>
+                <div id="shortcut-empty" class="p-8 text-center text-sm text-stone-500 hidden">
+                    아직 등록된 바로가기가 없습니다. 위 폼에서 추가하세요.
+                </div>
+            </section>
+        </main>
+
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 bg-stone-800 text-white px-4 py-3 rounded-lg shadow-xl font-bold text-sm transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        복사되었습니다.
+    </div>
+
+    <!-- Custom Modal -->
+    <div id="custom-modal" class="fixed inset-0 bg-stone-900/60 z-[100] hidden flex items-center justify-center backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 m-4" id="custom-modal-content">
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
