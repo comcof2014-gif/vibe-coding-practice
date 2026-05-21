@@ -271,7 +271,7 @@
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
                         <h2 class="text-xl font-bold text-stone-800 mb-2">AI 프롬프트 롤링 스튜디오</h2>
-                        <p class="text-stone-600 text-sm">대리점 사장님이 현장 정보만 입력하면, 9가지 영업 프롬프트와 맞춤형 예시 결과가 즉시 롤링되며 생성됩니다.</p>
+                        <p class="text-stone-600 text-sm">대리점 사장님이 현장 정보만 입력하면, 15개의 영업·비수기 프롬프트와 1개의 운세 이스터에그까지 — 총 16개의 맞춤 프롬프트가 자동으로 롤링됩니다. <span class="text-amber-700 font-semibold">각 프롬프트는 자체 입력 양식</span>을 사용하므로, 한 가지 상황에서 모든 산출물이 같은 가정으로 묶이지 않습니다.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button id="p-pauseBtn" class="px-3 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-md text-sm font-semibold hover:bg-stone-200 transition-colors">⏸ 롤링 일시정지</button>
@@ -295,48 +295,24 @@
                 <!-- Prompt Column 1: Inputs -->
                 <aside class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col h-[600px] lg:h-full">
                     <div class="p-4 border-b border-stone-100 bg-stone-50 rounded-t-xl flex justify-between items-center">
-                        <h3 class="font-bold text-stone-800">1. 현장정보 입력</h3>
+                        <h3 class="font-bold text-stone-800">1. 입력 정보</h3>
+                        <span class="text-[10px] text-stone-500">프롬프트별 자동 전환</span>
                     </div>
-                    <div class="p-4 flex-grow overflow-y-auto custom-scrollbar space-y-4 text-sm">
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">대리점명</label>
-                            <input id="p-dealer" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: ○○보일러 강동대리점">
+                    <div class="p-4 flex-grow overflow-y-auto custom-scrollbar space-y-5 text-sm">
+                        <div>
+                            <div class="text-[10px] font-bold text-sky-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 bg-sky-500 rounded-full"></span>
+                                공통 입력 (모든 프롬프트 공유)
+                            </div>
+                            <div id="p-common-fields" class="space-y-3"></div>
                         </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">담당 지역</label>
-                            <input id="p-region" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: 서울 강동구 고덕동, 명일동">
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">주요 고객층</label>
-                            <textarea id="p-customers" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: 15년 이상 구축 아파트 거주자"></textarea>
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">주요 주거 형태</label>
-                            <input id="p-housing" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="예: 구축 아파트와 빌라">
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">자주 나오는 현장 문제</label>
-                            <textarea id="p-issues" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="온수 지연, 난방 편차, 소음 등"></textarea>
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">최근 고객이 많이 하는 말</label>
-                            <textarea id="p-quotes" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="아직 고장은 안 났어요 등"></textarea>
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">우리 대리점의 강점</label>
-                            <textarea id="p-strengths" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="같은 단지 시공 경험, 토요일 방문 등"></textarea>
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">보유 장비 및 서비스</label>
-                            <textarea id="p-equipment" class="w-full border border-stone-300 rounded-md p-2 h-16 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="공기질 측정기 있음 등"></textarea>
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">이번 달 목표</label>
-                            <input id="p-goals" class="w-full border border-stone-300 rounded-md p-2 focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="무상점검 50건, 예약 15건 등">
-                        </div>
-                        <div class="space-y-1">
-                            <label class="block font-bold text-stone-700 text-xs">꼭 넣고 싶은 현장 이야기</label>
-                            <textarea id="p-story" class="w-full border border-stone-300 rounded-md p-2 h-20 resize-none focus:ring-2 focus:ring-sky-500 outline-none transition-shadow" placeholder="작년 겨울 문의가 많았던 단지 등"></textarea>
+                        <hr class="border-stone-200">
+                        <div>
+                            <div class="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                                <span>현재 프롬프트 전용 입력</span>
+                            </div>
+                            <div id="p-specific-fields" class="space-y-3"></div>
                         </div>
                     </div>
                     <div class="p-4 border-t border-stone-100 bg-stone-50 rounded-b-xl grid grid-cols-2 gap-2">
@@ -349,8 +325,8 @@
                 <section class="lg:col-span-5 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col h-[600px] lg:h-full relative overflow-hidden" id="p-carouselPanel">
                     <div class="p-4 border-b border-stone-100 bg-stone-50">
                         <div class="flex justify-between items-center mb-3">
-                            <h3 class="font-bold text-stone-800">2. 9개 프롬프트 롤링</h3>
-                            <span id="p-counter" class="text-xs font-bold text-stone-500">1 / 9</span>
+                            <h3 class="font-bold text-stone-800">2. 16개 프롬프트 롤링</h3>
+                            <span id="p-counter" class="text-xs font-bold text-stone-500">1 / 16</span>
                         </div>
                         <div class="flex gap-2 overflow-x-auto custom-scrollbar pb-2" id="p-tabs">
                         </div>
