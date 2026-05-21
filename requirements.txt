@@ -10,6 +10,5 @@ Pillow>=10.0.0
 # Windows-only WebView2/.NET bridge for pywebview
 pythonnet>=3.0.3; sys_platform == "win32"
 
-# On-device local AI runtime. Do not add torch or transformers.
-llama-cpp-python>=0.3.7
+# Online Gemini API runtime. Do not add torch or transformers.
 requests>=2.31.0
