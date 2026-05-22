@@ -20,8 +20,8 @@ py -m PyInstaller --clean --noconfirm dealer-dashboard.spec
 
 이 버전은 무거운 로컬 모델 다운로드와 `llama-cpp-python` 빌드를 제거하고, 온라인 Gemini API를 사용합니다.
 
-- 기본 모델: `gemini-2.5-flash-lite`
-- 품질 우선 선택 모델: `gemini-2.5-flash`
+- 기본 모델: `gemini-3.1-flash-lite`
+- 품질 우선 선택 모델: `gemini-3.5-flash`
 - 제공자: Google Gemini API
 - API 키 저장 위치: EXE 옆 `dealer-dashboard-data/ai-settings.json`
 - 앱 데이터 저장 위치: EXE 옆 `dealer-dashboard-data/config.json`
