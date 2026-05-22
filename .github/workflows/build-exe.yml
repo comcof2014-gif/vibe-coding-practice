@@ -60,9 +60,8 @@ jobs:
 
       - name: Syntax checks
         run: |
-          python -m py_compile app.py desktop.py ai_engine.py sitecustomize.py
+          python -m py_compile app.py desktop.py ai_engine.py
           node --check static/local_ai.js
-          node --check static/online_ai_override.js
 
       - name: Build one-file EXE
         run: |
