@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_MODEL = "gemini-2.5-flash-lite"
-QUALITY_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
+QUALITY_MODEL = "gemini-3.5-flash"
 SUPPORTED_MODELS = [
-    {"id": DEFAULT_MODEL, "label": "Gemini 2.5 Flash-Lite (fast/free-friendly)"},
-    {"id": QUALITY_MODEL, "label": "Gemini 2.5 Flash (higher quality)"},
+    {"id": DEFAULT_MODEL, "label": "Gemini 3.1 Flash-Lite (latest fast/free-friendly)"},
+    {"id": QUALITY_MODEL, "label": "Gemini 3.5 Flash (higher quality)"},
 ]
 
 
