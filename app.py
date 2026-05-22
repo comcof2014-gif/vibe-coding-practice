@@ -63,6 +63,7 @@ def migrate_legacy_config() -> None:
     except OSError:
         pass
 
+
 PRESET_COLORS = [
     "#0369a1",
     "#dc2626",
@@ -599,10 +600,21 @@ class AIPromptRunRequest(BaseModel):
         return cleaned
 
 
+class AISettingsRequest(BaseModel):
+    api_key: str = Field(default="", max_length=300)
+    model: str = Field(default="", max_length=80)
+    clear_api_key: bool = False
+
+    @field_validator("api_key", "model")
+    @classmethod
+    def _strip_ai_setting(cls, v: str) -> str:
+        return str(v or "").strip()
+
+
 app = FastAPI(
     title="대리점장 통합 관리 대시보드",
     description="영업 통제부터 AI 활용 실무 스크립트 제작까지",
-    version="1.2.0",
+    version="1.3.0",
 )
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -634,18 +646,18 @@ async def generate(payload: dict):
             ai_manager.start_async()
             return JSONResponse(
                 {
-                    "status": "initializing",
-                    "message": "로컬 AI 엔진을 준비하는 중입니다.",
+                    "status": "ai-not-ready",
+                    "message": "Gemini API 키를 저장하면 온라인 AI를 사용할 수 있습니다.",
                     "ai": ai_manager.status(),
                 },
                 status_code=202,
             )
-        return JSONResponse({"status": "local-ai", "match": ai_manager.match(text)})
+        return JSONResponse({"status": "online-ai", "match": ai_manager.match(text)})
 
     return JSONResponse(
         {
             "status": "demo",
-            "message": "정적 데모 모드입니다. 로컬 AI 추천은 /api/ai/match 엔드포인트를 사용합니다.",
+            "message": "온라인 AI 추천은 /api/ai/match 엔드포인트를 사용합니다.",
             "received": payload,
         }
     )
@@ -670,6 +682,21 @@ async def api_ai_templates():
     return [{"id": item["id"], "title": item["title"]} for item in PROMPT_TEMPLATE_EXAMPLES]
 
 
+@app.get("/api/ai/settings")
+async def api_ai_get_settings():
+    return ai_manager.public_settings()
+
+
+@app.put("/api/ai/settings")
+async def api_ai_update_settings(payload: AISettingsRequest):
+    settings = ai_manager.configure(
+        api_key=payload.api_key,
+        model=payload.model,
+        clear_api_key=payload.clear_api_key,
+    )
+    return {"status": "ok", "settings": settings, "ai": ai_manager.status()}
+
+
 @app.post("/api/ai/match")
 async def api_ai_match(payload: AIMatchRequest):
     status = ai_manager.status()
@@ -680,7 +707,7 @@ async def api_ai_match(payload: AIMatchRequest):
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "로컬 AI 엔진을 준비하는 중입니다.",
+                "message": "Gemini API 키를 저장한 뒤 온라인 AI를 사용할 수 있습니다.",
                 "status": ai_manager.status(),
             },
         )
@@ -707,7 +734,7 @@ async def api_ai_demo(payload: AIDemoRequest):
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "로컬 AI 엔진을 준비하는 중입니다.",
+                "message": "Gemini API 키를 저장한 뒤 온라인 AI를 사용할 수 있습니다.",
                 "status": ai_manager.status(),
             },
         )
@@ -732,7 +759,7 @@ async def api_ai_improve_prompt(payload: AIPromptImproveRequest):
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "로컬 AI 엔진 준비가 끝난 뒤 프롬프트를 보강할 수 있습니다.",
+                "message": "Gemini API 키를 저장한 뒤 프롬프트를 보강할 수 있습니다.",
                 "status": ai_manager.status(),
             },
         )
@@ -759,7 +786,7 @@ async def api_ai_run_prompt(payload: AIPromptRunRequest):
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "로컬 AI 엔진 준비가 끝난 뒤 결과를 생성할 수 있습니다.",
+                "message": "Gemini API 키를 저장한 뒤 결과를 생성할 수 있습니다.",
                 "status": ai_manager.status(),
             },
         )
@@ -774,7 +801,7 @@ async def api_ai_run_prompt(payload: AIPromptRunRequest):
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail={"message": str(exc), "status": ai_manager.status()})
     except Exception as exc:
-        raise HTTPException(status_code=500, detail={"message": f"로컬 AI 결과 생성 중 오류가 발생했습니다: {exc}", "status": ai_manager.status()})
+        raise HTTPException(status_code=500, detail={"message": f"온라인 AI 결과 생성 중 오류가 발생했습니다: {exc}", "status": ai_manager.status()})
 
 
 @app.get("/api/config")
